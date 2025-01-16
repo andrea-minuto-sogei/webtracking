@@ -1,0 +1,110 @@
+## LZ4
+
+# Dopp la build della libreria lz4
+# modificare il file /prod/tracciamento/libs/lz4/lib/pkgconfig/liblz4.pc
+# nella seguente maniera
+
+## Inizio testo
+#   LZ4 - Fast LZ compression algorithm
+#   Copyright (C) 2011-2014, Yann Collet.
+#   BSD 2-Clause License (http://www.opensource.org/licenses/bsd-license.php)
+
+prefix=/prod/tracciamento/libs/lz4
+libdir=/prod/tracciamento/libs/lz4/lib
+includedir=/prod/tracciamento/libs/lz4/include
+
+Name: lz4
+Description: extremely fast lossless compression algorithm library
+URL: http://www.lz4.org/
+Version: 1.9.4
+Libs: -L/prod/tracciamento/libs/lz4/lib -llz4
+Cflags: -I/prod/tracciamento/libs/lz4/include
+## Fine testo
+
+## LZ4 - FINE
+
+
+## OPENSSL
+# Per la build di openssl 3.2.x installare anche il package perl
+## OPENSSL - FINE
+
+
+## CYRUS SASL
+
+# Per la build di cyrus-sasl aggiungere "gss_impl=mit" subito dopo il test per mit (file configure, riga 16971)
+# Non importa l'errore durante il make della libreria cyrus-sasl e del successivo make install
+# Alla fine del make install completare le seguenti azioni
+# mkdir -p /prod/tracciamento/libs/cyrus-sasl/lib/pkgconfig
+# vi /prod/tracciamento/libs/cyrus-sasl/lib/pkgconfig/libsasl2.pc
+
+## Inizio testo
+prefix=/prod/tracciamento/libs/cyrus-sasl
+libdir=/prod/tracciamento/libs/cyrus-sasl/lib
+includedir=/prod/tracciamento/libs/cyrus-sasl/include
+
+Name: sasl2
+Description: Simple Authentication and Security Layer (SASL)
+URL: https://www.cyrusimap.org/sasl/
+Version: 2.1.28
+Libs: -L/prod/tracciamento/libs/cyrus-sasl/lib -lsasl2
+Cflags: -I/prod/tracciamento/libs/cyrus-sasl/include
+## Fine testo
+
+## CYRUS SASL - FINE
+
+
+## LIBRDKAFKA
+
+# Per la build di librdkafka
+# Modificare le seguenti righe del Makefile generato sulla root directory espansa
+# LIBSUBDIRS=     src
+# @(for d in $(LIBSUBDIRS); do $(MAKE) -C $$d librdkafka.a || exit $?; done)
+# il comando make install pur andando in errore completa la configurazione come previsto
+
+## LIBRDKAFKA - FINE
+
+
+## LIBPQXX
+
+La build richiede i packages libpq-devel (15.x), python3
+Il runtime richiede il package libpq (15.x)
+
+## LIBPQXX - FINE
+
+
+# Collector
+# In caso di "unresolved reference": for f in $(find /prod/tracciamento/libs -name "*.a"); do echo $f; nm $f | grep 'T <method>'; done
+
+# LIBRERIE
+# *** ATTENZIONE ***: Per problemi di spazio lanciare i comandi da /prod/tracciamento
+zlib: 1.3               # tar xaf /prod/tracciamento/software/zlib-*.gz && cd zlib*[0-9] && ./configure --prefix=/prod/tracciamento/libs/zlib --static --64 && make && make install && cd .. && rm -rf zlib*[0-9]
+*lz4: 1.9.4             # tar xaf /prod/tracciamento/software/lz4-*.gz && cd lz4*[0-9] && make && make DESTDIR=/prod/tracciamento/lz4 install && rm -rf /prod/tracciamento/libs/lz4 && mv /prod/tracciamento/lz4/usr/local/ /prod/tracciamento/libs/lz4 && rm -rf /prod/tracciamento/lz4 && cd .. && rm -rf lz4*[0-9] && /prod/tracciamento/libs/lz4/bin/lz4 -V
+gdbm: 1.23              # tar xaf /prod/tracciamento/software/gdbm-*.gz && cd gdbm*[0-9] && ./configure --prefix=/prod/tracciamento/libs/gdbm --enable-static && make && make install && cd .. && rm -rf gdbm*[0-9]
+*openssl: 3.2.0         # tar xaf /prod/tracciamento/software/openssl-*.gz && cd openssl-*[0-9] && ./config --prefix=/prod/tracciamento/libs/openssl && make && make install && cd .. && rm -rf openssl-*[0-9] && LD_LIBRARY_PATH=/prod/tracciamento/libs/openssl/lib64/ /prod/tracciamento/libs/openssl/bin/openssl version
+krb5: 1.21.2            # tar xaf /prod/tracciamento/software/krb5-*.gz && cd krb5-*[0-9]/src && CFLAGS='-fcommon -I/prod/tracciamento/libs/openssl/include' WARN_CFLAGS=-Wall LDFLAGS=-L/prod/tracciamento/libs/openssl/lib64 ./configure --prefix=/prod/tracciamento/libs/krb5 --enable-static --disable-shared && make && make install && cd ../.. && rm -rf krb5-*[0-9]
+*cyrus-sasl: 2.1.28     # tar xaf /prod/tracciamento/software/cyrus-sasl-*.gz && cd cyrus-sasl-*[0-9]
+                        # ./configure --prefix=/prod/tracciamento/libs/cyrus-sasl --enable-static --with-dblib=gdbm --with-openssl=/prod/tracciamento/libs/openssl --with-gdbm=/prod/tracciamento/libs/gdbm --enable-gssapi=/prod/tracciamento/libs/krb5 --with-gss_impl=mit --enable-shared=no
+                        # export PATH=/home/webihs/.local/bin:/home/webihs/bin:/home/webihs/.local/bin:/home/webihs/bin:/usr/share/Modules/bin:/usr/local/bin:/usr/bin:/usr/local/sbin:/usr/sbin:/opt/rh/gcc-toolset-13/root/usr/bin
+                        # make
+                        # make install
+                        # export PATH=/home/webihs/.local/bin:/home/webihs/bin:/home/webihs/.local/bin:/home/webihs/bin:/usr/share/Modules/bin:/usr/local/bin:/usr/bin:/usr/local/sbin:/usr/sbin:/prod/tracciamento/compiler/gcc-13/bin
+                        # cd .. && rm -rf cyrus-sasl-*[0-9]
+*librdkafka: 2.3.0      # tar xaf /prod/tracciamento/software/librdkafka-*.gz && cd librdkafka-*[0-9]
+                        # ./configure --clean && PKG_CONFIG_PATH=/prod/tracciamento/libs/zlib/lib/pkgconfig:/prod/tracciamento/libs/lz4/lib/pkgconfig:/prod/tracciamento/libs/openssl/lib64/pkgconfig:/prod/tracciamento/libs/krb5/lib/pkgconfig:/prod/tracciamento/libs/cyrus-sasl/lib/pkgconfig ./configure --prefix=/prod/tracciamento/libs/rdkafka --enable-strip --disable-debug-symbols
+                        # make libs && rm -rf /prod/tracciamento/libs/rdkafka && make install
+                        # cd .. && rm -rf librdkafka-*[0-9]
+nghttp2: 1.58.0         # tar xaf /prod/tracciamento/software/nghttp2-*.gz && cd nghttp2-*[0-9] && PKG_CONFIG_PATH=/prod/tracciamento/libs/zlib/lib/pkgconfig:/prod/tracciamento/libs/lz4/lib/pkgconfig:/prod/tracciamento/libs/openssl/lib64/pkgconfig:/prod/tracciamento/libs/krb5/lib/pkgconfig:/prod/tracciamento/libs/cyrus-sasl/lib/pkgconfig ./configure --prefix=/prod/tracciamento/libs/nghttp2 --enable-static --enable-lib-only && make && make install && cd .. && rm -rf nghttp2-*[0-9]
+libcurl: 8.5.0          # tar xaf /prod/tracciamento/software/curl-*.gz && cd curl-*[0-9] && PKG_CONFIG_PATH=/prod/tracciamento/libs/zlib/lib/pkgconfig:/prod/tracciamento/libs/lz4/lib/pkgconfig:/prod/tracciamento/libs/openssl/lib64/pkgconfig:/prod/tracciamento/libs/krb5/lib/pkgconfig:/prod/tracciamento/libs/cyrus-sasl/lib/pkgconfig:/prod/tracciamento/libs/nghttp2/lib/pkgconfig LD_LIBRARY_PATH=/prod/tracciamento/libs/openssl/lib64 ./configure --prefix=/prod/tracciamento/libs/curl --with-nghttp2=/prod/tracciamento/libs/nghttp2 --with-openssl=/prod/tracciamento/libs/openssl --disable-shared && make && make install && cd .. && rm -rf curl-*[0-9] && LD_LIBRARY_PATH=/prod/tracciamento/libs/openssl/lib64/ /prod/tracciamento/libs/curl/bin/curl --version
+*libpqxx: 7.8.1         # tar xaf /prod/tracciamento/software/libpqxx-*.gz && cd libpqxx* && ./configure --prefix=/prod/tracciamento/libs/pqxx && make && make install && cd .. && rm -rf libpqxx*
+
+# LINK LIBRERIE
+zlib: https://www.zlib.net/
+lz4: https://lz4.github.io/lz4/
+gdbm: https://www.gnu.org.ua/software/gdbm/
+openssl: https://www.openssl.org/
+krb5: https://web.mit.edu/kerberos/
+cyrus-sasl: https://www.cyrusimap.org/sasl/
+librdkafka: https://github.com/edenhill/librdkafka
+nghttp2: https://nghttp2.org/
+libcurl: https://curl.se/download.html
+libpqxx: https://github.com/jtv/libpqxx

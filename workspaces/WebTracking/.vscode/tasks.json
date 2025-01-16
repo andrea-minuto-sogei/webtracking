@@ -1,0 +1,34 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "type": "shell",
+      "label": "C17 Build",
+      "command": "gcc",
+      "args": [
+        "-std=c17",
+        "-D_LARGEFILE64_SOURCE=1",
+        "-L/prod/tracciamento/ihs/lib",
+        "-shared",
+        "-o",
+        "${fileDirname}/mod_web_tracking_24.so",
+        "-I/prod/tracciamento/ihs/include",
+        "-O3",
+        "-Wall",
+        "-fmessage-length=0",
+        "-fPIC",
+        "${fileDirname}/*.c"
+      ],
+      "options": {
+        "cwd": "${fileDirname}"
+      },
+      "problemMatcher": [
+        "$gcc"
+      ],
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      }
+    }
+  ]
+}

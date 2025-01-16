@@ -1,0 +1,17 @@
+{
+  "configurations": [
+    {
+      "name": "Linux",
+      "includePath": [
+        "${workspaceFolder}/**",
+        "/prod/tracciamento/ihs/include"
+      ],
+      "defines": [],
+      "compilerPath": "/opt/rh/gcc-toolset-14/root/bin/gcc",
+      "cStandard": "c17",
+      "cppStandard": "c++20",
+      "intelliSenseMode": "gcc-x64"
+    }
+  ],
+  "version": 4
+}
