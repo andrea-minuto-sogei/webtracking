@@ -3,21 +3,27 @@
   "tasks": [
     {
       "type": "shell",
-      "label": "C17 Build",
+      "label": "Web Tracking Apache Module Build",
       "command": "gcc",
       "args": [
+        "-std=c++23",
         "-std=c17",
         "-D_LARGEFILE64_SOURCE=1",
-        "-L/prod/tracciamento/ihs/lib",
+        "-L/prod/IBM/HTTPServer/lib",
         "-shared",
+        "-static-libstdc++",
         "-o",
-        "${fileDirname}/mod_web_tracking_24.so",
-        "-I/prod/tracciamento/ihs/include",
+        "${fileDirname}/mod_web_tracking.so",
+        "-I/prod/IBM/HTTPServer/include",
+        "-I${fileDirname}/zlib",
         "-O3",
         "-Wall",
         "-fmessage-length=0",
         "-fPIC",
-        "${fileDirname}/*.c"
+        "${fileDirname}/*.cpp",
+        "${fileDirname}/*.c",
+        "${fileDirname}/zlib/*.c",
+        "/opt/rh/gcc-toolset-14/root/usr/lib/gcc/x86_64-redhat-linux/14/libstdc++.a"
       ],
       "options": {
         "cwd": "${fileDirname}"

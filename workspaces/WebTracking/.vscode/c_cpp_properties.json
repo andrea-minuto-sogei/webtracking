@@ -4,12 +4,12 @@
       "name": "Linux",
       "includePath": [
         "${workspaceFolder}/**",
-        "/prod/tracciamento/ihs/include"
+        "/prod/IBM/HTTPServer/include"
       ],
       "defines": [],
-      "compilerPath": "/opt/rh/gcc-toolset-14/root/bin/gcc",
+      "compilerPath": "/opt/rh/gcc-toolset-14/root/bin/g++",
       "cStandard": "c17",
-      "cppStandard": "c++20",
+      "cppStandard": "c++23",
       "intelliSenseMode": "gcc-x64"
     }
   ],

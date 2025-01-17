@@ -128,16 +128,20 @@
 /* LTPA Token Reader */
 #include "wasuser.h"
 
+/* C++ header files */
+#include "wt_data.hpp"
+
 /* External functions, linked correctly but not declared by header files */
 extern char *strdup (const char *__s);
 extern int gethostname(char *name, size_t len);
 extern long syscall(long number, ...);
 
+/* unit header file */
 #include "mod_web_tracking.h"
 
 module AP_MODULE_DECLARE_DATA web_tracking_module;
 
-static const char *version = "Web Tracking Apache Module 2025.1.15.1 (C17)";
+static const char *version = "Web Tracking Apache Module 2025.1.15.1 (C17/C++23)";
 
 static apr_uint32_t next_id = 0;
 
