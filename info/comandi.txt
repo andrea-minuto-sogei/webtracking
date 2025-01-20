@@ -4,19 +4,19 @@
 scl enable gcc-toolset-14 bash
 
 # Build
-gcc -std=c++23 -std=c17 -D_LARGEFILE64_SOURCE=1 -L/prod/IBM/HTTPServer/lib -shared -static-libstdc++ -o /prod/tracciamento/workspaces/WebTracking/mod_web_tracking.so -I/prod/IBM/HTTPServer/include -I/prod/tracciamento/workspaces/WebTracking/zlib -O3 -Wall -fmessage-length=0 -fPIC /prod/tracciamento/workspaces/WebTracking/*.cpp /prod/tracciamento/workspaces/WebTracking/*.c /prod/tracciamento/workspaces/WebTracking/zlib/*.c /opt/rh/gcc-toolset-14/root/usr/lib/gcc/x86_64-redhat-linux/14/libstdc++.a
+gcc -std=c++23 -std=c17 -D_LARGEFILE64_SOURCE=1 -L/home/webihs/IHS/lib -shared -static-libstdc++ -o /home/webihs/webtracking/lib/mod_web_tracking.so -I/home/webihs/IHS/include -I/home/webihs/workspaces/WebTracking/zlib -O3 -Wall -fmessage-length=0 -fPIC /home/webihs/workspaces/WebTracking/*.cpp /home/webihs/workspaces/WebTracking/*.c /home/webihs/workspaces/WebTracking/zlib/*.c /opt/rh/gcc-toolset-14/root/usr/lib/gcc/x86_64-redhat-linux/14/libstdc++.a
 
 # Deploy
-mv -v /prod/tracciamento/workspaces/WebTracking/mod_web_tracking.so /home/webihs/mod_web_tracking.so
-scp -p /prod/webtracking/lib/mod_web_tracking.so siamv-prx-wl02.srv.sogei.it:mod_web_tracking.so
+mv -v /prod/tracciamento/archives/webtracking-bin.zip /home/webihs/
+scp -p /prod/tracciamento/archives/webtracking-bin.zip siamv-prx-wl02.srv.sogei.it:.
 
 ### Collector
 #
 ## Build
-#g++ -s -L/usr/lib64 -static-libgcc -static-libstdc++ -pthread -o /prod/tracciamento/workspaces/Collector/wt_collector -std=c++20 -I/prod/tracciamento/libs/openssl/include -I/prod/tracciamento/libs/rdkafka/include/librdkafka -I/prod/tracciamento/libs/curl/include -I/prod/tracciamento/libs/pqxx/include -O3 -Wall -fmessage-length=0 -fPIC /prod/tracciamento/workspaces/Collector/*.cpp /prod/tracciamento/libs/curl/lib/libcurl.a /prod/tracciamento/libs/nghttp2/lib/libnghttp2.a /prod/tracciamento/libs/rdkafka/lib/librdkafka.a /prod/tracciamento/libs/openssl/lib64/libssl.a /prod/tracciamento/libs/openssl/lib64/libcrypto.a /prod/tracciamento/libs/zlib/lib/libz.a /prod/tracciamento/libs/cyrus-sasl/lib/libsasl2.a /prod/tracciamento/libs/gdbm/lib/libgdbm.a /prod/tracciamento/libs/krb5/lib/libgssapi_krb5.a /prod/tracciamento/libs/krb5/lib/libkrb5.a /prod/tracciamento/libs/krb5/lib/libkrb5support.a /prod/tracciamento/libs/krb5/lib/libk5crypto.a /prod/tracciamento/libs/krb5/lib/libkrb5.a /prod/tracciamento/libs/krb5/lib/libcom_err.a /prod/tracciamento/libs/openssl/lib64/libcrypto.a /prod/tracciamento/libs/cyrus-sasl/lib/sasl2/libgssapiv2.a /prod/tracciamento/libs/lz4/lib/liblz4.a /prod/tracciamento/libs/pqxx/lib/libpqxx.a -lpq -lresolv -lm -lrt -ldl
+#g++ -s -L/usr/lib64 -static-libgcc -static-libstdc++ -pthread -o /home/webihs/workspaces/Collector/wt_collector -std=c++20 -I/prod/tracciamento/libs/openssl/include -I/prod/tracciamento/libs/rdkafka/include/librdkafka -I/prod/tracciamento/libs/curl/include -I/prod/tracciamento/libs/pqxx/include -O3 -Wall -fmessage-length=0 -fPIC /home/webihs/workspaces/Collector/*.cpp /prod/tracciamento/libs/curl/lib/libcurl.a /prod/tracciamento/libs/nghttp2/lib/libnghttp2.a /prod/tracciamento/libs/rdkafka/lib/librdkafka.a /prod/tracciamento/libs/openssl/lib64/libssl.a /prod/tracciamento/libs/openssl/lib64/libcrypto.a /prod/tracciamento/libs/zlib/lib/libz.a /prod/tracciamento/libs/cyrus-sasl/lib/libsasl2.a /prod/tracciamento/libs/gdbm/lib/libgdbm.a /prod/tracciamento/libs/krb5/lib/libgssapi_krb5.a /prod/tracciamento/libs/krb5/lib/libkrb5.a /prod/tracciamento/libs/krb5/lib/libkrb5support.a /prod/tracciamento/libs/krb5/lib/libk5crypto.a /prod/tracciamento/libs/krb5/lib/libkrb5.a /prod/tracciamento/libs/krb5/lib/libcom_err.a /prod/tracciamento/libs/openssl/lib64/libcrypto.a /prod/tracciamento/libs/cyrus-sasl/lib/sasl2/libgssapiv2.a /prod/tracciamento/libs/lz4/lib/liblz4.a /prod/tracciamento/libs/pqxx/lib/libpqxx.a -lpq -lresolv -lm -lrt -ldl
 #
 # Deploy
-#mv /prod/tracciamento/workspaces/Collector/wt_collector /prod/webtracking/bin/wt_collector_rh8
+#mv /home/webihs/workspaces/Collector/wt_collector /prod/webtracking/bin/wt_collector_rh8
 #scp -p /prod/tracciamento/webtracking/bin/wt_collector_rh8 siamv-prx-wl02.srv.sogei.it:/prod/webtracking/bin/wt_collector_rh8
 
 ## Test funzionamento wt_collector (plain)
@@ -31,14 +31,11 @@ scp -p /prod/webtracking/lib/mod_web_tracking.so siamv-prx-wl02.srv.sogei.it:mod
 ## Archivi
 
 # Creazione archivio binari
-grep -E -o 'Web Tracking Apache Module .*?\)' /prod/tracciamento/workspaces/WebTracking/mod_web_tracking.c > /prod/tracciamento/webtracking/bin/version.txt
-cd /prod/ && zip -r -FS -dc tracciamento/archives/webtracking-bin.zip webtracking/bin webtracking/lib webtracking/splunk && cd -
+grep -E -o 'Web Tracking Apache Module .*?\)' /home/webihs/workspaces/WebTracking/mod_web_tracking.c > /home/webihs/webtracking/bin/version.txt
+cd && zip -r -FS -dc /prod/tracciamento/archives/webtracking-bin.zip webtracking/bin webtracking/lib webtracking/splunk && cd -
 
 # Creazione archivio sorgenti
-rm -rf /prod/tracciamento/ihs/logs/*log && cd /prod/tracciamento && zip -r -FS -dc archives/webtracking-src.zip workspaces/WebTracking/ workspaces/Collector/ info && cd -
-
-## Clear
-rm -rfv /prod/tracciamento/ihs/logs/*log
+cd /prod/tracciamento && zip -r -FS -dc archives/webtracking-src.zip workspaces/WebTracking/ workspaces/Collector/ info && cd -
 
 ## Database
 
