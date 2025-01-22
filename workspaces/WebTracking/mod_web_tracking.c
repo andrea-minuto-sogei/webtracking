@@ -2,7 +2,8 @@
 
 /*
  * VERSION       DATE        DESCRIPTION
- * 2025.1.20.1  2025-01-20   Add memory management using C++23  
+ * 2025.1.22.1  2025-01-22   Add memory management and string formatting using C++23
+ *                           Remove directive WebTrackingPrintWASUser
  * 2025.1.15.1  2025-01-15   Move configuration directives printing out from DEBUG to INFO
  * 2025.1.14.1  2025-01-14   Change WebTrackingBodyLimit meaning and implement it
  *                           The body limit is also compared to inflated bodies
@@ -126,9 +127,6 @@
 /* Compression Library Header Files */
 #include "zutil.h"
 
-/* LTPA Token Reader */
-#include "wasuser.h"
-
 /* C++ header files */
 #include "wt_data.hpp"
 
@@ -142,7 +140,7 @@ extern long syscall(long number, ...);
 
 module AP_MODULE_DECLARE_DATA web_tracking_module;
 
-static const char *version = "Web Tracking Apache Module 2025.1.20.1 (C17/C++23)";
+static const char *version = "Web Tracking Apache Module 2025.1.22.1 (C17/C++23)";
 
 static apr_uint32_t next_id = 0;
 
@@ -759,69 +757,6 @@ static const char *wt_application_id(cmd_parms *cmd, void *dummy, const char *ar
    return OK;
 }
 
-static const char *wt_print_was_user(cmd_parms *cmd, void *dummy, const char *args)
-{
-   wt_config_t *conf = ap_get_module_config(cmd->server->module_config, &web_tracking_module);
-
-   ap_regex_t regex;
-   /* ^"?(\/[\w-\/.]*)"?\s+"?([\w-.\/:;<>=&!#"$%&'()*+,?@\[\]^`{|}~\\]+)"?\s+"?([0-9a-zA-Z\/+]+=*)"?\s+"?([\w-]+)"?(?:\s+"?([\w-.]+(?::\d{1,5})?|\*)"?)?$ */
-   ap_regcomp(&regex, "^\"?(\\/[\\w-\\/.]*)\"?\\s+\"?([\\w-.\\/:;<>=&!#\"$%&'()*+,?@\\[\\]^`{|}~\\\\]+)\"?\\s+\"?([0-9a-zA-Z\\/+]+=*)\"?\\s+\"?([\\w-]+)\"?(?:\\s+\"?([\\w-.]+(?::\\d{1,5})?|\\*)\"?)?$", AP_REG_EXTENDED);
-   apr_size_t nmatch = 5 + 1;
-   ap_regmatch_t *pmatch = apr_pcalloc(cmd->pool, sizeof(ap_regmatch_t) * nmatch);
-   int ret = ap_regexec(&regex, args, nmatch, pmatch, 0);
-   ap_regfree(&regex);
-   if (ret != 0) return "ERROR: Web Tracking Apache Module: WebTrackingPrintWASUser directive must follow the pattern <URI> <PWD> <BASE64 STRING> <COOKIE NAME> [<HOST>|*]\n";
-
-   size_t uri_length = pmatch[1].rm_eo - pmatch[1].rm_so;
-   char *uri = apr_pcalloc(cmd->pool, uri_length + 1);
-   memcpy(uri, args + pmatch[1].rm_so, uri_length);
-   uri[uri_length + 1] = 0;
-
-   size_t host_length = pmatch[5].rm_eo - pmatch[5].rm_so;
-   char *host = "*";
-   if (host_length > 0)
-   {
-      host = apr_pcalloc(cmd->pool, host_length + 1);
-      memcpy(host, args + pmatch[5].rm_so, host_length);
-      host[host_length + 1] = 0;
-   }
-
-   if (get_uri_table(conf->was_table, host, uri) == NULL)
-   {
-      size_t pwd_length = pmatch[2].rm_eo - pmatch[2].rm_so;
-      unsigned char *password = apr_pcalloc(cmd->pool, pwd_length + 1);
-      memcpy(password, args + pmatch[2].rm_so, pwd_length);
-      password[pwd_length + 1] = 0;
-
-      size_t tdes_length = pmatch[3].rm_eo - pmatch[3].rm_so;
-      unsigned char *tdes = apr_pcalloc(cmd->pool, tdes_length + 1);
-      memcpy(tdes, args + pmatch[3].rm_so, tdes_length);
-      tdes[tdes_length + 1] = 0;
-
-      aeskey_t aeskey;
-      ret = prepareltpakey(password, tdes, &aeskey);
-      if (ret == 0)
-      {
-         size_t name_length = pmatch[4].rm_eo - pmatch[4].rm_so;
-         char *name = apr_pcalloc(cmd->pool, name_length + 1);
-         memcpy(name, args + pmatch[4].rm_so, name_length);
-         name[name_length + 1] = 0;
-
-         conf->was_table = add_was_entry(cmd->pool, conf->was_table, host, uri, &aeskey, name);
-      }
-      else
-      {
-         printf("WARNING: Web Tracking Apache Module: The WebTrackingPrintWASUser host [%s] and uri [%s] will be ignored cause ltpa keys password or/and 3des key are not valid\n", host, uri);
-      }
-   }
-   else
-   {
-      printf("WARNING: Web Tracking Apache Module: The WebTrackingPrintWASUser host [%s] and uri [%s] were already defined and the directive will be ignored\n", host, uri);
-   }
-
-   return OK;
-}
-
 static const char *wt_get_listener(cmd_parms *cmd, void *dummy, const char *listener)
 {
    char *host, *scope_id;
@@ -878,9 +813,17 @@ static apr_status_t child_exit(void *data)
    server_rec *s = data;
    pid_t pid = getpid();
 
-   ap_log_error(APLOG_MARK, APLOG_ALERT, 0, s, "web_tracking_module: starting child cleanup routine [%d]", pid);
 
-   ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, s, "child_exit(): [%d] start", pid);
+   if(APLOG_IS_LEVEL(s, APLOG_ALERT))
+   {
+      ap_log_error(APLOG_MARK, APLOG_ALERT, 0, s, "web_tracking_module: starting child cleanup routine [%d]", pid);
+   }
+
+   if(APLOG_IS_LEVEL(s, APLOG_DEBUG))
+   {
+      ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, s, "child_exit(): [%d] start", pid);
+   }
+      
 
    // retrieve config instance
    wt_config_t *conf = ap_get_module_config(s->module_config, &web_tracking_module);
@@ -895,7 +838,10 @@ static apr_status_t child_exit(void *data)
 
          if (conf->wt_record_c->handle != NULL)
          {
-            ap_log_error(APLOG_MARK, APLOG_ALERT, 0, s, "web_tracking_module: move file %s to folder %s [%d]", conf->wt_record_c->file_path, conf->wt_record_c->archive_folder, pid);
+           if(APLOG_IS_LEVEL(s, APLOG_ALERT))
+           {
+               ap_log_error(APLOG_MARK, APLOG_ALERT, 0, s, "web_tracking_module: move file %s to folder %s [%d]", conf->wt_record_c->file_path, conf->wt_record_c->archive_folder, pid);
+           }
             wt_record_release(conf->wt_record_c);
             conf->wt_record_c = NULL;
          }   
@@ -906,21 +852,31 @@ static apr_status_t child_exit(void *data)
       {
          apr_thread_mutex_destroy(conf->record_thread_mutex.lock.tm);
          conf->record_thread_mutex.lock.tm = NULL;
-         ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, s, "child_exit(): [%d] Record thread mutex released", pid);
+         if(APLOG_IS_LEVEL(s, APLOG_DEBUG))
+         {
+            ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, s, "child_exit(): [%d] Record thread mutex released", pid);
+         }
       }
-
-      ap_log_error(APLOG_MARK, APLOG_ALERT, 0, s, "web_tracking_module: terminated child cleanup routine [%d]", pid);
+      if(APLOG_IS_LEVEL(s, APLOG_ALERT))
+      {
+         ap_log_error(APLOG_MARK, APLOG_ALERT, 0, s, "web_tracking_module: terminated child cleanup routine [%d]", pid);
+      }
    }
    else
    {
       char error[1024];
       apr_strerror(rtl, error, 1024);
-      ap_log_error(APLOG_MARK, APLOG_ALERT, 0, s, "web_tracking_module: child cleanup routine failed to acquire a cross-thread lock (err: %s) [%d]", error, pid);
+      if(APLOG_IS_LEVEL(s, APLOG_ALERT))
+      {
+         ap_log_error(APLOG_MARK, APLOG_ALERT, 0, s, "web_tracking_module: child cleanup routine failed to acquire a cross-thread lock (err: %s) [%d]", error, pid);
+      }
    }
 
-   ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, s, "child_exit(): [%d] end", pid);
-
-    return APR_SUCCESS;
+   if(APLOG_IS_LEVEL(s, APLOG_DEBUG))
+   {
+      ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, s, "child_exit(): [%d] end", pid);
+   }
+   return APR_SUCCESS;
 }
 
 static void child_init(apr_pool_t *pchild, server_rec *s)
@@ -935,11 +891,17 @@ static void child_init(apr_pool_t *pchild, server_rec *s)
    apr_status_t mtc = apr_thread_mutex_create(&conf->record_thread_mutex.lock.tm, APR_THREAD_MUTEX_DEFAULT, pchild);
    if (mtc == APR_SUCCESS)
    {
-      ap_log_error(APLOG_MARK, APLOG_INFO, 0, s, "[%d] Record thread mutex successfully initialized", pid);
+      if(APLOG_IS_LEVEL(s, APLOG_INFO))
+      {  
+         ap_log_error(APLOG_MARK, APLOG_INFO, 0, s, "[%d] Record thread mutex successfully initialized", pid);
+      }
    }
    else
    {
-      ap_log_error(APLOG_MARK, APLOG_ALERT, 0, s, "[%d] Record thread mutex NOT initialized (error %d)", pid, mtc);
+      if(APLOG_IS_LEVEL(s, APLOG_ALERT))
+      {  
+         ap_log_error(APLOG_MARK, APLOG_ALERT, 0, s, "[%d] Record thread mutex NOT initialized (error %d)", pid, mtc);
+      }
       conf->record_thread_mutex.type = apr_anylock_none;
    }
 
@@ -948,8 +910,10 @@ static void child_init(apr_pool_t *pchild, server_rec *s)
 
    // cleanup
    apr_pool_cleanup_register(pchild, s, child_exit, apr_pool_cleanup_null);
-
-   ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, s, "child_init(): [%d] child initialized", pid);
+   if(APLOG_IS_LEVEL(s, APLOG_DEBUG))
+   {  
+      ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, s, "child_init(): [%d] child initialized", pid);
+   }
 }
 
 static int post_config(apr_pool_t *pconf, apr_pool_t *plog, apr_pool_t *ptemp, server_rec *s)
@@ -960,11 +924,18 @@ static int post_config(apr_pool_t *pconf, apr_pool_t *plog, apr_pool_t *ptemp, s
 
    if (pconf)
    {
-      ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, s, "post_config(): [%d] start", pid);
-      ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, s, "post_config(): [%d] is_main_process = %d", pid, is_main_process);
+      if(APLOG_IS_LEVEL(s, APLOG_DEBUG))
+      {  
+         ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, s, "post_config(): [%d] start", pid);
+         ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, s, "post_config(): [%d] is_main_process = %d", pid, is_main_process);
+      }
    }
 
-   if (is_main_process) ap_log_error(APLOG_MARK, APLOG_INFO, 0, s, version);
+   if (is_main_process) 
+      if(APLOG_IS_LEVEL(s, APLOG_INFO))
+      {  
+         ap_log_error(APLOG_MARK, APLOG_INFO, 0, s, version);
+      }
 
    wt_config_t *conf = ap_get_module_config(s->module_config, &web_tracking_module);
 
@@ -988,29 +959,55 @@ static int post_config(apr_pool_t *pconf, apr_pool_t *plog, apr_pool_t *ptemp, s
 
          apr_pool_cleanup_register(pconf, NULL, wt_shm_cleanup, apr_pool_cleanup_null);
 
-         ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, s, "post_config(): [%d] successfully created or attached shared memory %s", pid, shm_filename);
+         if(APLOG_IS_LEVEL(s, APLOG_DEBUG))
+         { 
+            ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, s, "post_config(): [%d] successfully created or attached shared memory %s", pid, shm_filename);
+         }
       }
       else
       {
          wt_counter = 0;
          shm_counter = 0;
-         ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, s, "post_config(): [%d] failed creation of shared memory %s", pid, shm_filename);
+         if(APLOG_IS_LEVEL(s, APLOG_DEBUG))
+         { 
+            ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, s, "post_config(): [%d] failed creation of shared memory %s", pid, shm_filename);
+         }
       }
 
       // Print out configuration settings
-      ap_log_error(APLOG_MARK, APLOG_INFO, 0, s, "web_tracking_module: [%d] id = %s", pid, conf->id);
-      ap_log_error(APLOG_MARK, APLOG_INFO, 0, s, "web_tracking_module: [%d] uuid header = %s", pid, (conf->uuid_header != NULL ? conf->uuid_header : "NULL"));
-      ap_log_error(APLOG_MARK, APLOG_INFO, 0, s, "web_tracking_module: [%d] disable = %d", pid, conf->disable);
-      ap_log_error(APLOG_MARK, APLOG_INFO, 0, s, "web_tracking_module: [%d] http = %d", pid, conf->http);
-      ap_log_error(APLOG_MARK, APLOG_INFO, 0, s, "web_tracking_module: [%d] https = %d", pid, conf->https);
-      ap_log_error(APLOG_MARK, APLOG_INFO, 0, s, "web_tracking_module: [%d] inflate_response = %d", pid, conf->inflate_response);
-      ap_log_error(APLOG_MARK, APLOG_INFO, 0, s, "web_tracking_module: [%d] enable_proxy = %d", pid, conf->proxy);
-      ap_log_error(APLOG_MARK, APLOG_INFO, 0, s, "web_tracking_module: [%d] body_limit = %d MB", pid, conf->body_limit);
-      ap_log_error(APLOG_MARK, APLOG_INFO, 0, s, "web_tracking_module: [%d] enable_post_body = %d", pid, conf->enable_post_body);
-      if (conf->record_folder != NULL) ap_log_error(APLOG_MARK, APLOG_INFO, 0, s, "web_tracking_module: [%d] record_folder = %s", pid, conf->record_folder);
-      if (conf->record_archive_folder != NULL) ap_log_error(APLOG_MARK, APLOG_INFO, 0, s, "web_tracking_module: [%d] record_archive_folder = %s", pid, conf->record_archive_folder);
-      if (conf->record_minutes > 0) ap_log_error(APLOG_MARK, APLOG_INFO, 0, s, "web_tracking_module: [%d] record_life_time = %d minutes", pid, conf->record_minutes);
-      if (conf->ssl_indicator) ap_log_error(APLOG_MARK, APLOG_INFO, 0, s, "web_tracking_module: [%d] ssl_indicator = %s", pid, conf->ssl_indicator);
+      if(APLOG_IS_LEVEL(s, APLOG_INFO))
+      { 
+         ap_log_error(APLOG_MARK, APLOG_INFO, 0, s, "web_tracking_module: [%d] id = %s", pid, conf->id);
+         ap_log_error(APLOG_MARK, APLOG_INFO, 0, s, "web_tracking_module: [%d] uuid header = %s", pid, (conf->uuid_header != NULL ? conf->uuid_header : "NULL"));
+         ap_log_error(APLOG_MARK, APLOG_INFO, 0, s, "web_tracking_module: [%d] disable = %d", pid, conf->disable);
+         ap_log_error(APLOG_MARK, APLOG_INFO, 0, s, "web_tracking_module: [%d] http = %d", pid, conf->http);
+         ap_log_error(APLOG_MARK, APLOG_INFO, 0, s, "web_tracking_module: [%d] https = %d", pid, conf->https);
+         ap_log_error(APLOG_MARK, APLOG_INFO, 0, s, "web_tracking_module: [%d] inflate_response = %d", pid, conf->inflate_response);
+         ap_log_error(APLOG_MARK, APLOG_INFO, 0, s, "web_tracking_module: [%d] enable_proxy = %d", pid, conf->proxy);
+         ap_log_error(APLOG_MARK, APLOG_INFO, 0, s, "web_tracking_module: [%d] body_limit = %d MB", pid, conf->body_limit);
+         ap_log_error(APLOG_MARK, APLOG_INFO, 0, s, "web_tracking_module: [%d] enable_post_body = %d", pid, conf->enable_post_body);
+      }
+      if (conf->record_folder != NULL)
+         if(APLOG_IS_LEVEL(s, APLOG_INFO))
+         {  
+            ap_log_error(APLOG_MARK, APLOG_INFO, 0, s, "web_tracking_module: [%d] record_folder = %s", pid, conf->record_folder);
+         }
+      if (conf->record_archive_folder != NULL)
+         if(APLOG_IS_LEVEL(s, APLOG_INFO))
+         { 
+            ap_log_error(APLOG_MARK, APLOG_INFO, 0, s, "web_tracking_module: [%d] record_archive_folder = %s", pid, conf->record_archive_folder);
+         }
+      if (conf->record_minutes > 0) 
+         if(APLOG_IS_LEVEL(s, APLOG_INFO))
+         { 
+            ap_log_error(APLOG_MARK, APLOG_INFO, 0, s, "web_tracking_module: [%d] record_life_time = %d minutes", pid, conf->record_minutes);
+         }
+      if (conf->ssl_indicator) 
+         if(APLOG_IS_LEVEL(s, APLOG_INFO))
+         { 
+            ap_log_error(APLOG_MARK, APLOG_INFO, 0, s, "web_tracking_module: [%d] ssl_indicator = %s", pid, conf->ssl_indicator);
+         }
+      
       print_regex_table(s, conf->host_table, apr_psprintf(ptemp, "web_tracking_module: [%d] Host", pid));
       print_regex_table(s, conf->uri_table, apr_psprintf(ptemp, "web_tracking_module: [%d] URI", pid));
       print_regex_table(s, conf->exclude_uri_table, apr_psprintf(ptemp, "web_tracking_module: [%d] Exclude URI", pid));
@@ -1027,14 +1024,17 @@ static int post_config(apr_pool_t *pconf, apr_pool_t *plog, apr_pool_t *ptemp, s
       print_value_table(s, conf->exclude_parameter_table, apr_psprintf(ptemp, "web_tracking_module: [%d] exclude form parameter", pid));
       print_value_table(s, conf->envvar_table, apr_psprintf(ptemp, "web_tracking_module: [%d] print environment variable", pid));
       print_value_table(s, conf->request_header_table, apr_psprintf(ptemp, "web_tracking_module: [%d] print request header", pid));
-      if (conf->appid_header) ap_log_error(APLOG_MARK, APLOG_INFO, 0, s, "web_tracking_module: [%d] application id from response header = %s", pid, conf->appid_header);
-      print_uri_table(s, conf->appid_table, apr_psprintf(ptemp, "web_tracking_module: [%d] application id", pid));
-      print_was_table(s, conf->was_table, apr_psprintf(ptemp, "web_tracking_module: [%d] print was user", pid));
+      if (APLOG_IS_LEVEL(s, APLOG_INFO) && conf->appid_header) ap_log_error(APLOG_MARK, APLOG_INFO, 0, s, "web_tracking_module: [%d] application id from response header = %s", pid, conf->appid_header);
+      print_uri_table(s, conf->appid_table, apr_psprintf(ptemp, "web_tracking_module: [%d] application id", pid));      
    }
 
    if (conf->disable == 1)
    {
-      if (pconf) ap_log_error(APLOG_MARK, APLOG_WARNING, 0, s, "WARNING: Web Tracking Apache Module: The web tracking is disabled for all the requests (WebTrackingDisable = On)");
+      if (pconf)
+         if(APLOG_IS_LEVEL(s, APLOG_WARNING))
+         { 
+            ap_log_error(APLOG_MARK, APLOG_WARNING, 0, s, "WARNING: Web Tracking Apache Module: The web tracking is disabled for all the requests (WebTrackingDisable = On)");
+         }
       printf("WARNING: Web Tracking Apache Module: The web tracking is disabled for all the requests (WebTrackingDisable = On)\n");
    }
 
@@ -1042,23 +1042,39 @@ static int post_config(apr_pool_t *pconf, apr_pool_t *plog, apr_pool_t *ptemp, s
    {
       if (conf->host_table == 0)
       {
-         if (pconf) ap_log_error(APLOG_MARK, APLOG_WARNING, 0, s, "WARNING: Web Tracking Apache Module: Not found any directive WebTrackingHost, so the tracking is disabled for all the requests");
+         if (pconf)
+            if(APLOG_IS_LEVEL(s, APLOG_WARNING))
+            { 
+               ap_log_error(APLOG_MARK, APLOG_WARNING, 0, s, "WARNING: Web Tracking Apache Module: Not found any directive WebTrackingHost, so the tracking is disabled for all the requests");
+            }
          printf("WARNING: Web Tracking Apache Module: Not found any directive WebTrackingHost, so the tracking is disabled for all the requests\n");
       }
 
       if (conf->uri_table == 0)
       {
-         if (pconf) ap_log_error(APLOG_MARK, APLOG_WARNING, 0, s, "WARNING: Web Tracking Apache Module: Not found any directive WebTrackingURI, so the tracking is disabled for all the requests");
+         if (pconf) 
+            if(APLOG_IS_LEVEL(s, APLOG_WARNING))
+            { 
+               ap_log_error(APLOG_MARK, APLOG_WARNING, 0, s, "WARNING: Web Tracking Apache Module: Not found any directive WebTrackingURI, so the tracking is disabled for all the requests");
+            }
          printf("WARNING: Web Tracking Apache Module: Not found any directive WebTrackingURI, so the tracking is disabled for all the requests\n");
       }
 
       if (conf->http == 0 && conf->https == 0)
       {
-         if (pconf) ap_log_error(APLOG_MARK, APLOG_WARNING, 0, s, "WARNING: Web Tracking Apache Module: Both the directives WebTrackingHttpEnabled and WebTrackingHttpsEnabled are set to Off, so the tracking is disabled for all the requests");
+         if (pconf) 
+            if(APLOG_IS_LEVEL(s, APLOG_WARNING))
+            {    
+               ap_log_error(APLOG_MARK, APLOG_WARNING, 0, s, "WARNING: Web Tracking Apache Module: Both the directives WebTrackingHttpEnabled and WebTrackingHttpsEnabled are set to Off, so the tracking is disabled for all the requests");
+            }
          printf("WARNING: Web Tracking Apache Module: Both the directives WebTrackingHttpEnabled and WebTrackingHttpsEnabled are set to Off, so the tracking is disabled for all the requests\n");
       }
 
-      if (is_main_process) ap_log_error(APLOG_MARK, APLOG_INFO, 0, s, "WebTrackingID = %s (%s)", conf->id, (conf->id == conf->alt_id ? "generated by web tracking module" : "defined by user"));
+      if (is_main_process) 
+         if(APLOG_IS_LEVEL(s, APLOG_INFO))
+         { 
+            ap_log_error(APLOG_MARK, APLOG_INFO, 0, s, "WebTrackingID = %s (%s)", conf->id, (conf->id == conf->alt_id ? "generated by web tracking module" : "defined by user"));
+         }
    }
 
    // apachectl -t
@@ -1066,13 +1082,13 @@ static int post_config(apr_pool_t *pconf, apr_pool_t *plog, apr_pool_t *ptemp, s
    {
       printf("%s\n", version);
       printf("WebTrackingID = %s (%s)\n", conf->id, (conf->id == conf->alt_id ? "generated by web tracking module" : "defined by user"));
-      const char *prova = "prova";
-      prova = wt_data_format_string(NULL, "%s - %x - %d", "Hello", 14, 1024);
-      printf("%s\n", wt_data_get_string((void *) prova));
-      wt_data_release_string((void *) prova);
    }
 
-   if (pconf) ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, s, "post_config(): [%d] end (OK)", pid);
+   if (pconf) 
+      if(APLOG_IS_LEVEL(s, APLOG_DEBUG))
+      { 
+         ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, s, "post_config(): [%d] end (OK)", pid);
+      }
    return OK;
 }
 
@@ -1083,6 +1099,9 @@ static void test_config(apr_pool_t *p, server_rec *s)
 
 static int post_read_request(request_rec *r)
 {
+   // C++ implementation function
+   // return post_read_request_impl(r); 
+   
    pthread_t tid = syscall(SYS_gettid);
 
    if (APLOG_R_IS_LEVEL(r, APLOG_DEBUG))
@@ -1090,7 +1109,7 @@ static int post_read_request(request_rec *r)
       ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "post_read_request(): [%ld] start", tid);
       ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "post_read_request(): [%ld] URI = %s", tid, r->uri);
       ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "post_read_request(): [%ld] Method = %s", tid, r->method);
-   }
+   }   
 
    // start timestamp
    apr_time_t start = apr_time_now();
@@ -1117,6 +1136,17 @@ static int post_read_request(request_rec *r)
       return OK;
    }
 
+   if (conf->wt_record_c == NULL)   
+   {
+      if (APLOG_R_IS_LEVEL(r, APLOG_DEBUG))
+      {
+         ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "post_read_request(): [%ld] nothing to save since there isn't a configured record file", tid);
+         ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "post_read_request(): [%ld] end (OK) - %s", tid, s_elapsed(r->pool, apr_time_now() - start));
+      }
+      
+      return OK;
+   }
+
    // trace enabled for request uri?
    unsigned short trace_uri = 0;
    const char *trace_uri_matched = search_regex_table(r->uri, conf->trace_uri_table);
@@ -1132,7 +1162,7 @@ static int post_read_request(request_rec *r)
    if (APLOG_R_IS_LEVEL(r, APLOG_DEBUG)) ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "post_read_request(): [%ld] Host = %s", tid, host);
 
    // record_t instance
-   record_t *record = wt_data_alloc_object(sizeof(record_t));
+   record_t *record = apr_palloc(r->pool, sizeof(record_t));
    record->pool = r->pool;
    record->conf = conf;
 
@@ -1141,10 +1171,10 @@ static int post_read_request(request_rec *r)
    const char *uuid = apr_table_get(r->headers_in, conf->uuid_header);
    if (uuid == NULL)
    {
-      if (!(uuid = apr_table_get(r->subprocess_env, "UNIQUE_ID"))) uuid = wt_data_format_string(NULL, "%lx:%" APR_PID_T_FMT ":%lx:%x", start, getpid(), apr_time_now(), apr_atomic_inc32(&next_id));
+      if (!(uuid = apr_table_get(r->subprocess_env, "UNIQUE_ID"))) 
+         uuid = apr_psprintf(record->pool, "%lx:%" APR_PID_T_FMT ":%lx:%x", start, getpid(), apr_time_now(), apr_atomic_inc32(&next_id));
    }
 
-   uuid = wt_data_format_string((void *) uuid, "%s:%s", conf->id, uuid);
    if (APLOG_R_IS_LEVEL(r, APLOG_DEBUG)) ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "post_read_request(): [%ld] uuid = %s", tid, uuid);
 
    // check whether we got an host to be tracked
@@ -1351,89 +1381,26 @@ static int post_read_request(request_rec *r)
    ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "post_read_request(): [%ld] print environment variables ...", tid);
    if (conf->envvar_table) apr_table_do(log_envvars, record, r->subprocess_env, NULL);
 
-   // search for a was user
-   ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "post_read_request(): [%ld] search for a was user", tid);
-   uri_table_t *wu = search_uri_table(conf->was_table, host, r->uri);
-   if (wu != NULL)
-   {
-      ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "post_read_request(): [%ld] found: host = %s, uri = %s, cookie name = %s", tid, wu->host, wu->uri, wu->name);
-      const char *value = get_req_cookie(r, wu->name);
-      if (value != NULL)
-      {
-         ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "post_read_request(): [%ld] found cookie: %s = %s", tid, wu->name, value);
-
-         ltpa_t ltpa = { .length = 0 };
-
-         if (ltpadecode((unsigned const char *) value, wu->aeskey, &ltpa) == 0)
-         {
-            short found = 0;
-            for (int i = 0; i < ltpa.length; ++i)
-            {
-               if (!strcmp((const char *) ltpa.attrs[i], "u"))
-               {
-                  byte_p user = (unsigned char *) strchr((char *) ltpa.values[i], ':');
-                  if (user) ++user;
-                  else user = ltpa.values[i];
-                  ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "post_read_request(): [%ld] found user: %s (%s)", tid, ltpa.values[i], user);
-                  record->data = apr_psprintf(record->pool, "%s|\"USER: %s\"", record->data, user);
-                  found = 1;
-                  break;
-               }
-            }
-
-            if (found == 0)
-            {
-               ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "post_read_request(): [%ld] user not found", tid);
-               record->data = apr_psprintf(record->pool, "%s|\"USER: %s\"", record->data, "**UNF**");
-            }
-
-            ltparelease(&ltpa);
-         }
-         else
-         {
-            ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "post_read_request(): [%ld] decode phase failed", tid);
-            record->data = apr_psprintf(record->pool, "%s|\"USER: %s\"", record->data, "**DPF**");
-         }
-      }
-      else
-      {
-         ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "post_read_request(): [%ld] not found any cookie named %s", tid, wu->name);
-      }
-   }
-   else
-   {
-      ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "post_read_request(): [%ld] not found any matches", tid);
-   }
-
    // append uuid to the request headers
    apr_table_setn(r->headers_in, conf->uuid_header, uuid);
 
    ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "post_read_request(): [%ld] **** START END OF REQUEST ****", tid);
 
-   // recording is enabled?
-   if (conf->wt_record_c != NULL)
-   {
-      // BASE64 encoding
-      apr_time_t start_b64 = apr_time_now();
-      size_t rl_b64 = base64encodelen(strlen(record->data));
-      unsigned char *record_b64 = apr_palloc(record->pool, rl_b64 + 1);
-      base64encode((unsigned char *) record->data, strlen(record->data), record_b64);
-      record_b64[rl_b64] = 0;
-      ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "post_read_request(): [%ld] BASE64 encoding elapsed time = %s", tid, s_elapsed(record->pool, apr_time_now() - start_b64));
+   // BASE64 encoding
+   apr_time_t start_b64 = apr_time_now();
+   size_t rl_b64 = base64encodelen(strlen(record->data));
+   unsigned char *record_b64 = apr_palloc(record->pool, rl_b64 + 1);
+   base64encode((unsigned char *) record->data, strlen(record->data), record_b64);
+   record_b64[rl_b64] = 0;
+   ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "post_read_request(): [%ld] BASE64 encoding elapsed time = %s", tid, s_elapsed(record->pool, apr_time_now() - start_b64));
 
-      // prefix with the request markup
-      record->data = apr_psprintf(record->pool, "**REQUEST**|%s", record_b64);
+   // prefix with the request markup
+   record->data = apr_psprintf(record->pool, "**REQUEST**|%s", record_b64);
 
-      // save request data to a note
-      apr_table_setn(r->notes, "request_data", record->data);
-   }
-   else
-   {
-      ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "post_read_request(): [%ld] nothing to save since there isn't a configured record file", tid);
-   }
+   // save request data to a note
+   apr_table_setn(r->notes, "request_data", record->data);
 
    ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "post_read_request(): [%ld] **** FINISH END OF REQUEST ****", tid);
-
 
    unsigned short input_filter = strcmp(r->method, "GET") != 0 && strcmp(r->method, "DELETE") != 0;
    unsigned short output_filter = 1;
@@ -1630,9 +1597,12 @@ static int log_transaction(request_rec *r)
 {
    pthread_t tid = syscall(SYS_gettid);
 
-   ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "log_transaction(): [%ld] start", tid);
-   ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "log_transaction(): [%ld] URI = %s", tid, r->uri);
-   ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "log_transaction(): [%ld] status = %s", tid, r->status_line);
+   if (APLOG_IS_LEVEL(r->server, APLOG_DEBUG)) 
+   {
+      ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "log_transaction(): [%ld] start", tid);
+      ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "log_transaction(): [%ld] URI = %s", tid, r->uri);
+      ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "log_transaction(): [%ld] status = %s", tid, r->status_line);
+   }
 
    apr_time_t start = apr_time_now();
 
@@ -1641,46 +1611,71 @@ static int log_transaction(request_rec *r)
    // internal redirect?
    if (r->prev)
    {
-      ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "log_transaction(): [%ld] end (DECLINED)", tid);
+      if (APLOG_IS_LEVEL(r->server, APLOG_DEBUG)) 
+      {
+         ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "log_transaction(): [%ld] end (DECLINED)", tid);
+      }
+      
       return DECLINED;
    }
 
    // get uuid
    const char *uuid;
-   ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "log_transaction(): [%ld] retrieve uuid", tid);
+
+   if (APLOG_IS_LEVEL(r->server, APLOG_DEBUG)) 
+   {
+      ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "log_transaction(): [%ld] retrieve uuid", tid);
+   }
    uuid = apr_table_get(r->headers_in, conf->uuid_header);
    if (uuid == NULL)
    {
-      ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "log_transaction(): [%ld] uuid is NULL, so the web tracking is disabled for this request", tid);
-      ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "log_transaction(): [%ld] end (OK) - %s", tid, s_elapsed(r->pool, apr_time_now() - start));
+      if (APLOG_IS_LEVEL(r->server, APLOG_DEBUG)) 
+      {
+         ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "log_transaction(): [%ld] uuid is NULL, so the web tracking is disabled for this request", tid);
+         ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "log_transaction(): [%ld] end (OK) - %s", tid, s_elapsed(r->pool, apr_time_now() - start));
+      }
       return OK;
    }
 
-   ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "log_transaction(): [%ld] uuid = %s", tid, uuid);
+   if (APLOG_IS_LEVEL(r->server, APLOG_DEBUG)) 
+   {
+      ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "log_transaction(): [%ld] uuid = %s", tid, uuid);
+   }
 
    // get remote ip
    const char *remote_ip = r->useragent_ip;
-   ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "log_transaction(): [%ld] remote_ip = %s", tid, remote_ip);
+   if (APLOG_IS_LEVEL(r->server, APLOG_DEBUG)) 
+   {
+      ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "log_transaction(): [%ld] remote_ip = %s", tid, remote_ip);
+   }
    if (conf->proxy)
    {
-      ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "log_transaction(): [%ld] proxy management enabled", tid);
+      if (APLOG_IS_LEVEL(r->server, APLOG_DEBUG)) 
+      {
+         ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "log_transaction(): [%ld] proxy management enabled", tid);
+      }
       const char *clientip = apr_table_get(r->headers_in, conf->clientip_header != NULL ? conf->clientip_header : "X-Forwarded-For");
       if (clientip != NULL)
       {
          remote_ip = clientip;
-         ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "log_transaction(): [%ld] %s = %s", tid, conf->clientip_header != NULL ? conf->clientip_header : "X-Forwarded-For", clientip);
+         if (APLOG_IS_LEVEL(r->server, APLOG_DEBUG)) 
+         {
+            ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "log_transaction(): [%ld] %s = %s", tid, conf->clientip_header != NULL ? conf->clientip_header : "X-Forwarded-For", clientip);
+         }
       }
    }
 
    // record_t instance
    record_t *record = apr_pcalloc(r->pool, sizeof(record_t));
-   record->pool = r->pool;
    record->conf = conf;
 
    // get host
    const char *host = apr_table_get(r->headers_in, "Host");
    if (host == NULL) host = r->hostname;
-   ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "log_transaction(): [%ld] Host = %s", tid, host);
+   if (APLOG_IS_LEVEL(r->server, APLOG_DEBUG)) 
+   {
+      ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "log_transaction(): [%ld] Host = %s", tid, host);
+   }
 
    char timestamp[30];
    apr_size_t retsize;
@@ -1692,7 +1687,10 @@ static int log_transaction(request_rec *r)
    apr_time_exp_lt(&request_time, r->request_time);
    apr_strftime(timezone, &retsize, 6, "%z", &request_time);
    apr_strftime(timezone, &retsize, 6, "%z", &request_time);
-   ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "log_transaction(): [%ld] UTC = %s, TZ = %s", tid, timestamp, timezone);
+   if (APLOG_IS_LEVEL(r->server, APLOG_DEBUG)) 
+   {
+      ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "log_transaction(): [%ld] UTC = %s, TZ = %s", tid, timestamp, timezone);
+   }
 
    record->data = apr_psprintf(record->pool, "\"%s\"|\"%s\"|\"%s\"|\"%s\"|\"%s\"|\"%s://%s%s",
       timestamp, timezone,
@@ -1707,7 +1705,10 @@ static int log_transaction(request_rec *r)
 
    apr_time_t elapsed = start - r->request_time;
    record->data = apr_psprintf(record->pool, "%s|\"%d\"|\"%ld\"", record->data, r->status, elapsed);
-   ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "log_transaction(): [%ld] elapsed time = %s", tid, s_elapsed(r->pool, elapsed));
+   if (APLOG_IS_LEVEL(r->server, APLOG_DEBUG)) 
+   {
+      ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "log_transaction(): [%ld] elapsed time = %s", tid, s_elapsed(r->pool, elapsed));
+   }
 
    // get content type
    const char *content_type = apr_table_get(r->headers_out, "Content-Type");
@@ -1722,73 +1723,31 @@ static int log_transaction(request_rec *r)
    }
    else
    {
-      ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "log_transaction(): [%ld] matched Trace URI = %s", tid, trace_uri_matched);
+      if (APLOG_IS_LEVEL(r->server, APLOG_DEBUG)) 
+      {
+         ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "log_transaction(): [%ld] matched Trace URI = %s", tid, trace_uri_matched);
+      }
       apr_table_do(log_headers_for_trace, record, r->headers_out, NULL);
    }
 
    // add environment variable if enabled
-   ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "log_transaction(): [%ld] print environment variables ...", tid);
+   if (APLOG_IS_LEVEL(r->server, APLOG_DEBUG)) 
+   {
+      ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "log_transaction(): [%ld] print environment variables ...", tid);
+   }
    if (conf->envvar_table) apr_table_do(log_envvars, record, r->subprocess_env, NULL);
 
    // add request headers if enabled
-   ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "log_transaction(): [%ld] print request headers ...", tid);
+   if (APLOG_IS_LEVEL(r->server, APLOG_DEBUG)) 
+   {
+      ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "log_transaction(): [%ld] print request headers ...", tid);
+   }
    if (conf->request_header_table) apr_table_do(log_request_headers, record, r->headers_in, NULL);
 
-   // search for a was user
-   ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "log_transaction(): [%ld] search for a was user", tid);
-   uri_table_t *wu = search_uri_table(conf->was_table, host, r->uri);
-   if (wu != NULL)
+   if (APLOG_IS_LEVEL(r->server, APLOG_DEBUG)) 
    {
-      ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "log_transaction(): [%ld] found: host = %s, uri = %s, cookie name = %s", tid, wu->host, wu->uri, wu->name);
-      const char *value = get_resp_cookie(r, wu->name);
-      if (value != NULL)
-      {
-         ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "log_transaction(): [%ld] found cookie: %s = %s", tid, wu->name, value);
-
-         ltpa_t ltpa = { .length = 0 };
-
-         if (ltpadecode((const unsigned char *) value, wu->aeskey, &ltpa) == 0)
-         {
-            short found = 0;
-            for (int i = 0; i < ltpa.length; ++i)
-            {
-               if (!strcmp((const char *) ltpa.attrs[i], "u"))
-               {
-                  byte_p user = (unsigned char *) strchr((const char *) ltpa.values[i], ':');
-                  if (user) ++user;
-                  else user = ltpa.values[i];
-                  ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "log_transaction(): [%ld] found user: %s (%s)", tid, ltpa.values[i], user);
-                  record->data = apr_psprintf(record->pool, "%s|\"USER: %s\"", record->data, user);
-                  found = 1;
-                  break;
-               }
-            }
-
-            if (found == 0)
-            {
-               ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "log_transaction(): [%ld] user not found", tid);
-               record->data = apr_psprintf(record->pool, "%s|\"USER: %s\"", record->data, "**UNF**");
-            }
-
-            ltparelease(&ltpa);
-         }
-         else
-         {
-            ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "log_transaction(): [%ld] decode phase failed", tid);
-            record->data = apr_psprintf(record->pool, "%s|\"USER: %s\"", record->data, "**DPF**");
-         }
-      }
-      else
-      {
-         ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "log_transaction(): [%ld] not found any cookie named %s", tid, wu->name);
-      }
+      ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "log_transaction(): [%ld] **** START END OF RESPONSE ****", tid);
    }
-   else
-   {
-      ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "log_transaction(): [%ld] not found any matches", tid);
-   }
-
-   ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "log_transaction(): [%ld] **** START END OF RESPONSE ****", tid);
 
    // retrieve appid
    const char * appid = 0;
@@ -1797,13 +1756,19 @@ static int log_transaction(request_rec *r)
    {
       // retrieve appid from directives
       appid = "";
-      ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "log_transaction(): [%ld] retrieve application id from directives", tid);
+      if (APLOG_IS_LEVEL(r->server, APLOG_DEBUG)) 
+      {
+         ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "log_transaction(): [%ld] retrieve application id from directives", tid);
+      }
       uri_table_t *t = search_uri_table(conf->appid_table, host, r->uri);
       if (t != NULL) appid = t->value;
    }
 
    // print out appid
-   ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "log_transaction(): [%ld] appid = [%s]", tid, appid);
+   if (APLOG_IS_LEVEL(r->server, APLOG_DEBUG)) 
+   {
+      ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "log_transaction(): [%ld] appid = [%s]", tid, appid);
+   }
    
    // build final record if needed
    if (conf->wt_record_c != NULL)
@@ -1814,7 +1779,10 @@ static int log_transaction(request_rec *r)
       unsigned char *record_b64 = apr_palloc(record->pool, rl_b64 + 1);
       base64encode((unsigned char *) record->data, strlen(record->data), record_b64);
       record_b64[rl_b64] = 0;
-      ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "log_transaction(): [%ld] BASE64 encoding elapsed time = %s", tid, s_elapsed(record->pool, apr_time_now() - start_b64));
+      if (APLOG_IS_LEVEL(r->server, APLOG_DEBUG)) 
+      {
+         ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "log_transaction(): [%ld] BASE64 encoding elapsed time = %s", tid, s_elapsed(record->pool, apr_time_now() - start_b64));
+      }
 
       // prefix with response markup
       record->data = apr_psprintf(record->pool, "**RESPONSE**|%s", record_b64);
@@ -1828,11 +1796,17 @@ static int log_transaction(request_rec *r)
       // request data is valid?
       if (request_data != NULL)
       {
-         ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "log_transaction(): [%ld] write final record appending all parts", tid);
+         if (APLOG_IS_LEVEL(r->server, APLOG_DEBUG)) 
+         {
+            ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "log_transaction(): [%ld] write final record appending all parts", tid);
+         }
 
          // create record prefix with uuid and appid
          const char * prefix = apr_psprintf(record->pool, "\"%s\"|\"%s\"", uuid, appid);
-         ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "log_transaction(): [%ld] record prefix = %s", tid, prefix);
+         if (APLOG_IS_LEVEL(r->server, APLOG_DEBUG)) 
+         {
+            ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "log_transaction(): [%ld] record prefix = %s", tid, prefix);
+         }
 
          // retrieve zoned timestamp
          char timestamp[36] = "\"";
@@ -1865,19 +1839,34 @@ static int log_transaction(request_rec *r)
             APR_ANYLOCK_UNLOCK(&conf->record_thread_mutex);
 
             // print out record log data outcome
-            if (total_bytes != -1) ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "log_transaction(): [%ld] successfully written %d chars", tid, total_bytes);
-            else ap_log_error(APLOG_MARK, APLOG_ALERT, 0, r->server, "ALERT: failed to write to log file record: uuid = %s, bytes to write = %ld", uuid, length);
+            if (total_bytes != -1) {
+               if (APLOG_IS_LEVEL(r->server, APLOG_DEBUG)) 
+               {
+                  ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "log_transaction(): [%ld] successfully written %d chars", tid, total_bytes);
+               }
+            } else {
+               if (APLOG_IS_LEVEL(r->server, APLOG_ALERT)) 
+               {
+                  ap_log_error(APLOG_MARK, APLOG_ALERT, 0, r->server, "ALERT: failed to write to log file record: uuid = %s, bytes to write = %ld", uuid, length);
+               }
+            }
          }
          else
          {
             char error[1024];
             apr_strerror(rtl, error, 1024);
-            ap_log_error(APLOG_MARK, APLOG_ALERT, 0, r->server, "ALERT: Record with uuid = %s failed to acquire a cross-thread lock (err: %s)", uuid, error);
+            if (APLOG_IS_LEVEL(r->server, APLOG_ALERT)) 
+            {
+               ap_log_error(APLOG_MARK, APLOG_ALERT, 0, r->server, "ALERT: Record with uuid = %s failed to acquire a cross-thread lock (err: %s)", uuid, error);
+            }
          }
       }
       else
       {
-         ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "log_transaction(): [%ld] request data is NULL!! Nothing to do!", tid);
+         if (APLOG_IS_LEVEL(r->server, APLOG_DEBUG)) 
+         {
+            ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "log_transaction(): [%ld] request data is NULL!! Nothing to do!", tid);
+         }
       }
 
       if (request_data != NULL) apr_table_unset(r->notes, "request_data");
@@ -1886,18 +1875,31 @@ static int log_transaction(request_rec *r)
    }
    else
    {
-      ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "log_transaction(): [%ld] nothing to save since there isn't a configured access file", tid);
+      if (APLOG_IS_LEVEL(r->server, APLOG_DEBUG)) 
+      {
+         ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "log_transaction(): [%ld] nothing to save since there isn't a configured access file", tid);
+      }
    }
 
-   ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "log_transaction(): [%ld] **** FINISH END OF RESPONSE ****", tid);
+   if (APLOG_IS_LEVEL(r->server, APLOG_DEBUG)) 
+   {
+      ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "log_transaction(): [%ld] **** FINISH END OF RESPONSE ****", tid);
+   }
 
    apr_atomic_inc32(&conf->t_response);
    if (wt_counter) apr_atomic_inc32(&wt_counter->t_response);
 
    const char *was;
-   if ((was = apr_table_get(r->subprocess_env, "WAS"))) ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "log_transaction(): [%ld] WAS = %s", tid, was);
-
-   ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "log_transaction(): [%ld] end (OK) - %s", tid, s_elapsed(r->pool, apr_time_now() - start));
+   if ((was = apr_table_get(r->subprocess_env, "WAS"))) 
+      if (APLOG_IS_LEVEL(r->server, APLOG_DEBUG)) 
+      {
+         ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "log_transaction(): [%ld] WAS = %s", tid, was);
+      }
+   
+   if (APLOG_IS_LEVEL(r->server, APLOG_DEBUG)) 
+   {
+      ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "log_transaction(): [%ld] end (OK) - %s", tid, s_elapsed(r->pool, apr_time_now() - start));
+   }
    return OK;
 }
 
@@ -1905,43 +1907,68 @@ static int wt_input_filter(ap_filter_t *f, apr_bucket_brigade *bb, ap_input_mode
 {
    pthread_t tid = syscall(SYS_gettid);
 
-   ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_input_filter(): [%ld] start", tid);
-   ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_input_filter(): [%ld] readbytes = %ld", tid, readbytes);
+   if (APLOG_C_IS_LEVEL(f->c, APLOG_DEBUG))
+   {
+      ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_input_filter(): [%ld] start", tid);
+      ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_input_filter(): [%ld] readbytes = %ld", tid, readbytes);
+   }
 
    if (mode == AP_MODE_EXHAUSTIVE)
    {
-      ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_input_filter(): [%ld] mode = AP_MODE_EXHAUSTIVE", tid);
-      ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_input_filter(): [%ld] end (ap_get_brigade)", tid);
+      if (APLOG_C_IS_LEVEL(f->c, APLOG_DEBUG))
+      {
+         ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_input_filter(): [%ld] mode = AP_MODE_EXHAUSTIVE", tid);
+         ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_input_filter(): [%ld] end (ap_get_brigade)", tid);
+      }
+
       return ap_get_brigade(f->next, bb, mode, block, readbytes);
    }
    else
    if (mode == AP_MODE_GETLINE)
    {
-      ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_input_filter(): [%ld] mode = AP_MODE_GETLINE", tid);
+      if (APLOG_C_IS_LEVEL(f->c, APLOG_DEBUG))
+      {
+         ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_input_filter(): [%ld] mode = AP_MODE_GETLINE", tid);
+      }
 
       wt_input_filter_t *ctx = f->ctx;
 
       if (ctx == 0)
       {
-         ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_input_filter(): [%ld] the filter context is null!", tid);
-         ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_input_filter(): [%ld] end (ap_get_brigade)", tid);
+         if (APLOG_C_IS_LEVEL(f->c, APLOG_DEBUG))
+         {
+            ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_input_filter(): [%ld] the filter context is null!", tid);
+            ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_input_filter(): [%ld] end (ap_get_brigade)", tid);
+         }
+
          return ap_get_brigade(f->next, bb, mode, block, readbytes);
       }
 
-      ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_input_filter(): [%ld] URI = %s", tid, ctx->uri);
-      ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_input_filter(): [%ld] uuid = %s", tid, ctx->uuid);
-
+      if (APLOG_C_IS_LEVEL(f->c, APLOG_DEBUG))
+      {
+         ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_input_filter(): [%ld] URI = %s", tid, ctx->uri);
+         ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_input_filter(): [%ld] uuid = %s", tid, ctx->uuid);
+      }
+	  
       if (ctx->tid != tid)
       {
-         ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_input_filter(): [%ld] the current tid and the request tid (%ld) don't match", tid, ctx->tid);
-         ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_input_filter(): [%ld] end (ap_get_brigade)", tid);
+         if (APLOG_C_IS_LEVEL(f->c, APLOG_DEBUG))
+         {
+            ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_input_filter(): [%ld] the current tid and the request tid (%ld) don't match", tid, ctx->tid);
+            ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_input_filter(): [%ld] end (ap_get_brigade)", tid);
+         }
+
          return ap_get_brigade(f->next, bb, mode, block, readbytes);
       }
 
       if (ctx->cancelled_i)
       {
-         ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_input_filter(): [%ld] the request body tracking is no longer active", tid);
-         ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_input_filter(): [%ld] end (ap_get_brigade)", tid);
+         if (APLOG_C_IS_LEVEL(f->c, APLOG_DEBUG))
+         {
+            ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_input_filter(): [%ld] the request body tracking is no longer active", tid);
+            ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_input_filter(): [%ld] end (ap_get_brigade)", tid);
+         }
+
          return ap_get_brigade(f->next, bb, mode, block, readbytes);
       }
 
@@ -1950,9 +1977,12 @@ static int wt_input_filter(ap_filter_t *f, apr_bucket_brigade *bb, ap_input_mode
          apr_time_t start_filter = apr_time_now();
          if (ctx->start_i == 0) ctx->start_i = start_filter;
 
-         ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_input_filter(): [%ld] **** START END OF REQUEST BODY ****", tid);
-         ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_input_filter(): [%ld] read all bytes (transfer-encoding chunked)", tid);
-         ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_input_filter(): [%ld] total bytes read = %ld", tid, ctx->length_i);
+         if (APLOG_C_IS_LEVEL(f->c, APLOG_DEBUG))
+         {
+            ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_input_filter(): [%ld] **** START END OF REQUEST BODY ****", tid);
+            ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_input_filter(): [%ld] read all bytes (transfer-encoding chunked)", tid);
+            ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_input_filter(): [%ld] total bytes read = %ld", tid, ctx->length_i);
+         }
 
          if (ctx->conf->wt_record_c != NULL)
          {
@@ -1971,7 +2001,11 @@ static int wt_input_filter(ap_filter_t *f, apr_bucket_brigade *bb, ap_input_mode
             unsigned char *record_b64 = apr_palloc(f->r->pool, rl_b64 + 1);
             base64encode((unsigned char *) record, ctx->length_i, record_b64);
             record_b64[rl_b64] = 0;
-            ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_input_filter(): [%ld] BASE64 encoding elapsed time = %s", tid, s_elapsed(f->c->pool, apr_time_now() - start_b64));
+
+            if (APLOG_C_IS_LEVEL(f->c, APLOG_DEBUG))
+            {
+               ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_input_filter(): [%ld] BASE64 encoding elapsed time = %s", tid, s_elapsed(f->c->pool, apr_time_now() - start_b64));
+            }
 
             // request body data
             char *request_body_data = apr_psprintf(f->r->pool, "**REQUEST_BODY**|%s", record_b64);
@@ -1979,10 +2013,16 @@ static int wt_input_filter(ap_filter_t *f, apr_bucket_brigade *bb, ap_input_mode
          }
          else
          {
-            ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_input_filter(): [%ld] nothing to save since there isn't a configured access file", tid);
+            if (APLOG_C_IS_LEVEL(f->c, APLOG_DEBUG))
+            {
+               ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_input_filter(): [%ld] nothing to save since there isn't a configured access file", tid);
+            }
          }
 
-         ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_input_filter(): [%ld] **** FINISH END OF REQUEST BODY ****", tid);
+         if (APLOG_C_IS_LEVEL(f->c, APLOG_DEBUG))
+         {
+            ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_input_filter(): [%ld] **** FINISH END OF REQUEST BODY ****", tid);
+         }
 
          apr_atomic_inc32(&ctx->conf->t_body_request);
          if (wt_counter) apr_atomic_inc32(&wt_counter->t_body_request);
@@ -1996,69 +2036,113 @@ static int wt_input_filter(ap_filter_t *f, apr_bucket_brigade *bb, ap_input_mode
 
          apr_time_t elapsed = end_filter - ctx->start_i;
 
-         ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_input_filter(): [%ld] ELAPSED TIMES: total = %s, filter = %s", tid, s_elapsed(f->c->pool, elapsed), s_elapsed(f->c->pool, ctx->elapsed));
+         if (APLOG_C_IS_LEVEL(f->c, APLOG_DEBUG))
+         {
+            ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_input_filter(): [%ld] ELAPSED TIMES: total = %s, filter = %s", tid, s_elapsed(f->c->pool, elapsed), s_elapsed(f->c->pool, ctx->elapsed));
+         }
       }
       else
       {
-         ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_input_filter(): [%ld] call to getline = %d", tid, ctx->getline);
+         if (APLOG_C_IS_LEVEL(f->c, APLOG_DEBUG))
+         {
+            ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_input_filter(): [%ld] call to getline = %d", tid, ctx->getline);
+         }
       }
 
-      ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_input_filter(): [%ld] end (ap_get_brigade)", tid);
+      if (APLOG_C_IS_LEVEL(f->c, APLOG_DEBUG))
+      {
+         ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_input_filter(): [%ld] end (ap_get_brigade)", tid);
+      }
+
       return ap_get_brigade(f->next, bb, mode, block, readbytes);
    }
    else
    if (mode == AP_MODE_EATCRLF)
    {
-      ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_input_filter(): [%ld] mode = AP_MODE_EATCRLF", tid);
-      ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_input_filter(): [%ld] end (ap_get_brigade)", tid);
+      if (APLOG_C_IS_LEVEL(f->c, APLOG_DEBUG))
+      {
+         ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_input_filter(): [%ld] mode = AP_MODE_EATCRLF", tid);
+         ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_input_filter(): [%ld] end (ap_get_brigade)", tid);
+      }
+
       return ap_get_brigade(f->next, bb, mode, block, readbytes);
    }
    else
    if (mode == AP_MODE_SPECULATIVE)
    {
-      ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_input_filter(): [%ld] mode = AP_MODE_SPECULATIVE", tid);
-      ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_input_filter(): [%ld] end (ap_get_brigade)", tid);
+      if (APLOG_C_IS_LEVEL(f->c, APLOG_DEBUG))
+      {
+         ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_input_filter(): [%ld] mode = AP_MODE_SPECULATIVE", tid);
+         ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_input_filter(): [%ld] end (ap_get_brigade)", tid);
+      }
+
       return ap_get_brigade(f->next, bb, mode, block, readbytes);
    }
    
    if (mode == AP_MODE_INIT)
    {
-      ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_input_filter(): [%ld] mode = AP_MODE_INIT", tid);
-      ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_input_filter(): [%ld] end (ap_get_brigade)", tid);
+      if (APLOG_C_IS_LEVEL(f->c, APLOG_DEBUG))
+      {
+         ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_input_filter(): [%ld] mode = AP_MODE_INIT", tid);
+         ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_input_filter(): [%ld] end (ap_get_brigade)", tid);
+      }
+
       return ap_get_brigade(f->next, bb, mode, block, readbytes);
    }
    else
    if (mode == AP_MODE_READBYTES)
    {
-      ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_input_filter(): [%ld] mode = AP_MODE_READBYTES", tid);
+      if (APLOG_C_IS_LEVEL(f->c, APLOG_DEBUG))
+      {
+         ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_input_filter(): [%ld] mode = AP_MODE_READBYTES", tid);
+      }
 
       wt_input_filter_t *ctx = f->ctx;
 
       if (ctx == 0)
       {
-         ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_input_filter(): [%ld] the filter context is null!", tid);
-         ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_input_filter(): [%ld] end (ap_get_brigade)", tid);
+         if (APLOG_C_IS_LEVEL(f->c, APLOG_DEBUG))
+         {
+            ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_input_filter(): [%ld] the filter context is null!", tid);
+            ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_input_filter(): [%ld] end (ap_get_brigade)", tid);
+         }
+
          return ap_get_brigade(f->next, bb, mode, block, readbytes);
       }
 
-      ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_input_filter(): [%ld] URI = %s", tid, ctx->uri);
-      ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_input_filter(): [%ld] uuid = %s", tid, ctx->uuid);
+      if (APLOG_C_IS_LEVEL(f->c, APLOG_DEBUG))
+      {
+         ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_input_filter(): [%ld] URI = %s", tid, ctx->uri);
+         ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_input_filter(): [%ld] uuid = %s", tid, ctx->uuid);
+      }
 
       if (ctx->tid != tid)
       {
-         ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_input_filter(): [%ld] the current tid and the request tid (%ld) don't match", tid, ctx->tid);
-         ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_input_filter(): [%ld] end (ap_get_brigade)", tid);
+         if (APLOG_C_IS_LEVEL(f->c, APLOG_DEBUG))
+         {
+            ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_input_filter(): [%ld] the current tid and the request tid (%ld) don't match", tid, ctx->tid);
+            ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_input_filter(): [%ld] end (ap_get_brigade)", tid);
+		 }
+
          return ap_get_brigade(f->next, bb, mode, block, readbytes);
       }
 
       if (ctx->cancelled_i)
       {
-         ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_input_filter(): [%ld] the request body tracking is no longer active", tid);
-         ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_input_filter(): [%ld] end (ap_get_brigade)", tid);
+         if (APLOG_C_IS_LEVEL(f->c, APLOG_DEBUG))
+         {
+            ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_input_filter(): [%ld] the request body tracking is no longer active", tid);
+			ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_input_filter(): [%ld] end (ap_get_brigade)", tid);
+		 }
+
          return ap_get_brigade(f->next, bb, mode, block, readbytes);
       }
 
-      ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_input_filter(): [%ld] reset call to getline", tid);
+      if (APLOG_C_IS_LEVEL(f->c, APLOG_DEBUG))
+      {
+         ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_input_filter(): [%ld] reset call to getline", tid);
+      }
+
       ctx->getline = 0;
 
       apr_time_t start_filter = apr_time_now();
@@ -2068,37 +2152,57 @@ static int wt_input_filter(ap_filter_t *f, apr_bucket_brigade *bb, ap_input_mode
 
       if (ret == APR_SUCCESS)
       {
-         ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_input_filter(): [%ld] ap_get_brigade() = APR_SUCCESS", tid);
-         ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_input_filter(): [%ld] content_length = %ld", tid, ctx->content_length_i);
+		 if (APLOG_C_IS_LEVEL(f->c, APLOG_DEBUG))
+         {
+			ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_input_filter(): [%ld] ap_get_brigade() = APR_SUCCESS", tid);
+			ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_input_filter(): [%ld] content_length = %ld", tid, ctx->content_length_i);
+		 }
 
          apr_bucket *b = NULL;
          for (b = APR_BRIGADE_FIRST(bb); b != APR_BRIGADE_SENTINEL(bb); b = APR_BUCKET_NEXT(b))
          {
             if (APR_BUCKET_IS_EOS(b))
             {
-               ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_input_filter(): [%ld] end of stream bucket found", tid);
+			   if (APLOG_C_IS_LEVEL(f->c, APLOG_DEBUG))
+			   {
+                  ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_input_filter(): [%ld] end of stream bucket found", tid);
+			   }
+
                break;
             }
 
             const char *buffer;
             apr_size_t bytes;
 
-            ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_input_filter(): [%ld] reading from bucket ...", tid);
+			if (APLOG_C_IS_LEVEL(f->c, APLOG_DEBUG))
+			{
+               ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_input_filter(): [%ld] reading from bucket ...", tid);
+            }
+
             int rv = apr_bucket_read(b, &buffer, &bytes, APR_BLOCK_READ);
 
             if (rv == APR_SUCCESS)
             {
-               ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_input_filter(): [%ld] read %ld bytes", tid, bytes);
+			   if (APLOG_C_IS_LEVEL(f->c, APLOG_DEBUG))
+			   {
+                  ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_input_filter(): [%ld] read %ld bytes", tid, bytes);
+			   }
 
                if (bytes > 0)
                {
                   if (((ctx->length_i + bytes) / 1048576L) > ctx->conf->body_limit)
                   {
-                     ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_input_filter(): [%ld] exceeded the body limit", tid);
+			         if (APLOG_C_IS_LEVEL(f->c, APLOG_DEBUG))
+			         {
+                        ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_input_filter(): [%ld] exceeded the body limit", tid);
+					 }
 
                      if (!ctx->trace_uri)
                      {
-                        ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_input_filter(): [%ld] the tracking will be cancelled", tid);
+						if (APLOG_C_IS_LEVEL(f->c, APLOG_DEBUG))
+						{
+							ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_input_filter(): [%ld] the tracking will be cancelled", tid);
+						}
                         ctx->length_i = 0;
                         ctx->first_bn = ctx->last_bn = NULL;
                         ctx->cancelled_i = 1;
@@ -2108,14 +2212,21 @@ static int wt_input_filter(ap_filter_t *f, apr_bucket_brigade *bb, ap_input_mode
 
                         apr_time_t elapsed = end_filter - ctx->start_i;
 
-                        ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_input_filter(): [%ld] ELAPSED TIMES: total = %s, filter = %s", tid, s_elapsed(f->c->pool, elapsed), s_elapsed(f->c->pool, ctx->elapsed));
+						if (APLOG_C_IS_LEVEL(f->c, APLOG_DEBUG))
+						{
+							ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_input_filter(): [%ld] ELAPSED TIMES: total = %s, filter = %s", tid, s_elapsed(f->c->pool, elapsed), s_elapsed(f->c->pool, ctx->elapsed));
 
-                        ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_input_filter(): [%ld] end (APR_SUCCESS)", tid);
+							ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_input_filter(): [%ld] end (APR_SUCCESS)", tid);
+						}
+
                         return APR_SUCCESS;
                      }
                      else
                      {
-                        ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_input_filter(): [%ld] forced to continue cause at least a trace uri matched", tid);
+						if (APLOG_C_IS_LEVEL(f->c, APLOG_DEBUG))
+						{
+							ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_input_filter(): [%ld] forced to continue cause at least a trace uri matched", tid);
+						}
                      }
                   }
 
@@ -2136,7 +2247,12 @@ static int wt_input_filter(ap_filter_t *f, apr_bucket_brigade *bb, ap_input_mode
                   }
 
                   ctx->length_i += bytes;
-                  ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_input_filter(): [%ld] partial bytes read so far = %ld", tid, ctx->length_i);
+
+				  if (APLOG_C_IS_LEVEL(f->c, APLOG_DEBUG))
+				  {
+                     ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_input_filter(): [%ld] partial bytes read so far = %ld", tid, ctx->length_i);
+				  }
+
                }
                else
                {
@@ -2145,7 +2261,10 @@ static int wt_input_filter(ap_filter_t *f, apr_bucket_brigade *bb, ap_input_mode
             }
             else
             {
-               ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_input_filter(): [%ld] failure when reading from bucket (%d)", tid, rv);
+			   if (APLOG_C_IS_LEVEL(f->c, APLOG_DEBUG))
+			   {
+                  ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_input_filter(): [%ld] failure when reading from bucket (%d)", tid, rv);
+			   }
 
                ctx->first_bn = ctx->last_bn = 0;
                ctx->length_i = 0;
@@ -2156,9 +2275,13 @@ static int wt_input_filter(ap_filter_t *f, apr_bucket_brigade *bb, ap_input_mode
 
                apr_time_t elapsed = end_filter - ctx->start_i;
 
-               ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_input_filter(): [%ld] ELAPSED TIMES: total = %s, filter = %s", tid, s_elapsed(f->c->pool, elapsed), s_elapsed(f->c->pool, ctx->elapsed));
+			   if (APLOG_C_IS_LEVEL(f->c, APLOG_DEBUG))
+			   {
+                  ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_input_filter(): [%ld] ELAPSED TIMES: total = %s, filter = %s", tid, s_elapsed(f->c->pool, elapsed), s_elapsed(f->c->pool, ctx->elapsed));
 
-               ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_input_filter(): [%ld] end (%d)", tid, rv);
+                  ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_input_filter(): [%ld] end (%d)", tid, rv);
+			   }
+
                return rv;
             }
          }
@@ -2168,9 +2291,12 @@ static int wt_input_filter(ap_filter_t *f, apr_bucket_brigade *bb, ap_input_mode
             apr_time_t start_filter = apr_time_now();
             if (ctx->start_i == 0) ctx->start_i = start_filter;
 
-            ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_input_filter(): [%ld] **** START END OF REQUEST BODY ****", tid);
-            ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_input_filter(): [%ld] read all content-length bytes", tid);
-            ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_input_filter(): [%ld] total bytes read = %ld", tid, ctx->length_i);
+			if (APLOG_C_IS_LEVEL(f->c, APLOG_DEBUG))
+			{
+				ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_input_filter(): [%ld] **** START END OF REQUEST BODY ****", tid);
+				ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_input_filter(): [%ld] read all content-length bytes", tid);
+				ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_input_filter(): [%ld] total bytes read = %ld", tid, ctx->length_i);
+			}
 
             if (ctx->conf->wt_record_c != NULL)
             {
@@ -2189,7 +2315,11 @@ static int wt_input_filter(ap_filter_t *f, apr_bucket_brigade *bb, ap_input_mode
                unsigned char *record_b64 = apr_palloc(f->r->pool, rl_b64 + 1);
                base64encode((unsigned char *) record, ctx->length_i, record_b64);
                record_b64[rl_b64] = 0;
-               ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_input_filter(): [%ld] BASE64 encoding elapsed time = %s", tid, s_elapsed(f->c->pool, apr_time_now() - start_b64));
+
+			   if (APLOG_C_IS_LEVEL(f->c, APLOG_DEBUG))
+			   {
+                  ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_input_filter(): [%ld] BASE64 encoding elapsed time = %s", tid, s_elapsed(f->c->pool, apr_time_now() - start_b64));
+			   }
 
                // request body data
                char *request_body_data = apr_psprintf(f->r->pool, "**REQUEST_BODY**|%s", record_b64);
@@ -2197,11 +2327,16 @@ static int wt_input_filter(ap_filter_t *f, apr_bucket_brigade *bb, ap_input_mode
             }
             else
             {
-               ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_input_filter(): [%ld] nothing to save since there isn't a configured access file", tid);
-            }
+			   if (APLOG_C_IS_LEVEL(f->c, APLOG_DEBUG))
+			   {
+                  ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_input_filter(): [%ld] nothing to save since there isn't a configured access file", tid);
+               }
+			}
 
-            ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_input_filter(): [%ld] **** FINISH END OF REQUEST BODY ****", tid);
-
+			if (APLOG_C_IS_LEVEL(f->c, APLOG_DEBUG))
+			{
+				ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_input_filter(): [%ld] **** FINISH END OF REQUEST BODY ****", tid);
+			}
 
             ctx->first_bn = ctx->last_bn = NULL;
             ctx->length_i = 0;
@@ -2212,22 +2347,38 @@ static int wt_input_filter(ap_filter_t *f, apr_bucket_brigade *bb, ap_input_mode
 
             apr_time_t elapsed = end_filter - ctx->start_i;
 
-            ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_input_filter(): [%ld] ELAPSED TIMES: total = %s, filter = %s", tid, s_elapsed(f->c->pool, elapsed), s_elapsed(f->c->pool, ctx->elapsed));
-         }
+			if (APLOG_C_IS_LEVEL(f->c, APLOG_DEBUG))
+			{
+				ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_input_filter(): [%ld] ELAPSED TIMES: total = %s, filter = %s", tid, s_elapsed(f->c->pool, elapsed), s_elapsed(f->c->pool, ctx->elapsed));
+			}
 
-         ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_input_filter(): [%ld] end (APR_SUCCESS)", tid);
+		 }
+
+		 if (APLOG_C_IS_LEVEL(f->c, APLOG_DEBUG))
+		 {
+			ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_input_filter(): [%ld] end (APR_SUCCESS)", tid);
+		 }
+
          return APR_SUCCESS;
       }
       else
       {
-         ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_input_filter(): [%ld] ap_get_brigade() = %d (ERROR)", tid, ret);
-         ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_input_filter(): [%ld] end (%d)", tid, ret);
-         return ret;
+		 if (APLOG_C_IS_LEVEL(f->c, APLOG_DEBUG))
+		 {
+			ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_input_filter(): [%ld] ap_get_brigade() = %d (ERROR)", tid, ret);
+			ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_input_filter(): [%ld] end (%d)", tid, ret);
+         }
+		 
+		 return ret;
       }
    }
    else
    {
-      ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_input_filter(): [%ld] mode = %d", tid, mode);
+	  if (APLOG_C_IS_LEVEL(f->c, APLOG_DEBUG))
+	  {
+         ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_input_filter(): [%ld] mode = %d", tid, mode);
+	  }
+
       return APR_ENOTIMPL;
    }
 }
@@ -2236,45 +2387,71 @@ static int wt_output_filter(ap_filter_t *f, apr_bucket_brigade *bb)
 {
    pthread_t tid = syscall(SYS_gettid);
 
-   ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_output_filter(): [%ld] start", tid);
-
+   if (APLOG_C_IS_LEVEL(f->c, APLOG_DEBUG))
+   {
+      ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_output_filter(): [%ld] start", tid);
+   }
+   
    wt_output_filter_t *ctx = f->ctx;
 
    if (ctx == 0)
    {
-      ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_output_filter(): [%ld] the filter context is null!", tid);
-      ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_output_filter(): [%ld] end (ap_pass_brigade)", tid);
-      return ap_pass_brigade(f->next, bb);
+	  if (APLOG_C_IS_LEVEL(f->c, APLOG_DEBUG))
+	  {
+         ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_output_filter(): [%ld] the filter context is null!", tid);
+         ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_output_filter(): [%ld] end (ap_pass_brigade)", tid);
+      }
+	  
+	  return ap_pass_brigade(f->next, bb);
    }
 
-   ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_output_filter(): [%ld] URI = %s", tid, ctx->uri);
-   ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_output_filter(): [%ld] uuid = %s", tid, ctx->uuid);
+   if (APLOG_C_IS_LEVEL(f->c, APLOG_DEBUG))
+   {
+      ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_output_filter(): [%ld] URI = %s", tid, ctx->uri);
+      ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_output_filter(): [%ld] uuid = %s", tid, ctx->uuid);
+   }
 
    if (ctx->cancelled_o)
    {
-      ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_output_filter(): [%ld] the response body tracking has been cancelled!", tid);
-      ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_output_filter(): [%ld] end (ap_pass_brigade)", tid);
+	  if (APLOG_C_IS_LEVEL(f->c, APLOG_DEBUG))
+	  {
+         ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_output_filter(): [%ld] the response body tracking has been cancelled!", tid);
+         ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_output_filter(): [%ld] end (ap_pass_brigade)", tid);
+      }
+
       return ap_pass_brigade(f->next, bb);
    }
 
    if (ctx->end_o)
    {
-      ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_output_filter(): [%ld] the response body has already been written!", tid);
-      ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_output_filter(): [%ld] end (ap_pass_brigade)", tid);
+	  if (APLOG_C_IS_LEVEL(f->c, APLOG_DEBUG))
+	  {
+         ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_output_filter(): [%ld] the response body has already been written!", tid);
+         ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_output_filter(): [%ld] end (ap_pass_brigade)", tid);
+      }
+	  
       return ap_pass_brigade(f->next, bb);
    }
 
    if (ctx->tid != tid)
    {
-      ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_output_filter(): [%ld] the current tid and the request tid (%ld) don't match", tid, ctx->tid);
-      ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_output_filter(): [%ld] end (ap_pass_brigade)", tid);
+	  if (APLOG_C_IS_LEVEL(f->c, APLOG_DEBUG))
+	  {
+         ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_output_filter(): [%ld] the current tid and the request tid (%ld) don't match", tid, ctx->tid);
+         ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_output_filter(): [%ld] end (ap_pass_brigade)", tid);
+      }
+
       return ap_pass_brigade(f->next, bb);
    }
 
    if (APR_BRIGADE_EMPTY(bb))
    {
-      ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_output_filter(): [%ld] the given brigade is empty", tid);
-      ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_output_filter(): [%ld] end (ap_pass_brigade)", tid);
+	  if (APLOG_C_IS_LEVEL(f->c, APLOG_DEBUG))
+	  {
+         ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_output_filter(): [%ld] the given brigade is empty", tid);
+         ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_output_filter(): [%ld] end (ap_pass_brigade)", tid);
+      }
+
       return ap_pass_brigade(f->next, bb);
    }
 
@@ -2284,16 +2461,28 @@ static int wt_output_filter(ap_filter_t *f, apr_bucket_brigade *bb)
    const char *content_type = "-";
    if (f->r != 0 && f->r->headers_out != 0 && ctx->output_filter == 1)
    {
-      ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_output_filter(): [%ld] request_rec is present, search Content_Type", tid);
+	  if (APLOG_C_IS_LEVEL(f->c, APLOG_DEBUG))
+	  {
+         ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_output_filter(): [%ld] request_rec is present, search Content_Type", tid);
+      }
+
       content_type = apr_table_get(f->r->headers_out, "Content-Type");
       if (content_type != NULL)
       {
-         ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_output_filter(): [%ld] Content-Type = %s", tid, content_type);
+   	     if (APLOG_C_IS_LEVEL(f->c, APLOG_DEBUG))
+	     {
+            ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_output_filter(): [%ld] Content-Type = %s", tid, content_type);
+         }
+
          const char *ct_matched = search_regex_table(content_type, ctx->conf->content_table);
          if (ct_matched == NULL)
          {
-            ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_output_filter(): [%ld] the Content-Type doesn't match with the enabled Content-Types", tid);
-            if (!ctx->output_header && !ctx->trace_uri)
+   	        if (APLOG_C_IS_LEVEL(f->c, APLOG_DEBUG))
+	        {
+               ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_output_filter(): [%ld] the Content-Type doesn't match with the enabled Content-Types", tid);
+            }
+			
+			if (!ctx->output_header && !ctx->trace_uri)
             {
                ctx->cancelled_o = 1;
                
@@ -2302,21 +2491,32 @@ static int wt_output_filter(ap_filter_t *f, apr_bucket_brigade *bb)
 
                apr_time_t elapsed = end_filter - ctx->start_o;
 
-               ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_output_filter(): [%ld] ELAPSED TIMES: total = %s, filter = %s", tid, s_elapsed(f->c->pool, elapsed), s_elapsed(f->c->pool, ctx->elapsed));
+			   if (APLOG_C_IS_LEVEL(f->c, APLOG_DEBUG))
+			   {
+                  ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_output_filter(): [%ld] ELAPSED TIMES: total = %s, filter = %s", tid, s_elapsed(f->c->pool, elapsed), s_elapsed(f->c->pool, ctx->elapsed));
 
-               ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_output_filter(): [%ld] end (ap_pass_brigade)", tid);
-               return ap_pass_brigade(f->next, bb);
+                  ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_output_filter(): [%ld] end (ap_pass_brigade)", tid);
+               }
+			   
+			   return ap_pass_brigade(f->next, bb);
             }
             else
             if (!ctx->trace_uri)
             {
-               ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_output_filter(): [%ld] forced to continue cause there are headers to be removed", tid);
-               ctx->output_filter = 0;
+			   if (APLOG_C_IS_LEVEL(f->c, APLOG_DEBUG))
+			   {
+                  ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_output_filter(): [%ld] forced to continue cause there are headers to be removed", tid);
+               }
+			   
+			   ctx->output_filter = 0;
             }
             else
             {
-               ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_output_filter(): [%ld] forced to continue cause at least a trace uri matched (output_header: %d)", tid, ctx->output_header);
-            }
+			   if (APLOG_C_IS_LEVEL(f->c, APLOG_DEBUG))
+			   {
+                  ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_output_filter(): [%ld] forced to continue cause at least a trace uri matched (output_header: %d)", tid, ctx->output_header);
+               }
+			}
          }
          else
          {
@@ -2684,19 +2884,28 @@ static int wt_output_filter(ap_filter_t *f, apr_bucket_brigade *bb)
 static int wt_status_hook(request_rec *r, int flags)
 {
    pthread_t tid = syscall(SYS_gettid);
-   ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "wt_status_hook(): [%ld] start", tid);
-   ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "wt_status_hook(): [%ld] flags = %d", tid, flags);
+   if (APLOG_IS_LEVEL(r->server, APLOG_DEBUG)) 
+   {
+		ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "wt_status_hook(): [%ld] start", tid);
+		ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "wt_status_hook(): [%ld] flags = %d", tid, flags);
+   }
 
    if (flags == AP_STATUS_EXTENDED)
    {
-      ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "wt_status_hook(): [%ld] flags == AP_STATUS_EXTENDED", tid);
+	  if (APLOG_IS_LEVEL(r->server, APLOG_DEBUG)) 
+	  {
+		ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "wt_status_hook(): [%ld] flags == AP_STATUS_EXTENDED", tid);
+	  }
 
       pid_t pid = getpid();
 
       const char *l = apr_table_get(r->headers_in, "Accept-Language");
       if (l != NULL)
       {
-         ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "wt_status_hook(): [%ld] Accept-Language = %s", tid, l);
+		 if (APLOG_IS_LEVEL(r->server, APLOG_DEBUG)) 
+		 {
+			ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "wt_status_hook(): [%ld] Accept-Language = %s", tid, l);
+		 }
 
          char language[32 + 1];
          strncpy(language, l, 32);
@@ -2717,24 +2926,40 @@ static int wt_status_hook(request_rec *r, int flags)
                   language[5] = 0;
                }
 
-               ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "wt_status_hook(): [%ld] set locale %s", tid, language);
+			   if (APLOG_IS_LEVEL(r->server, APLOG_DEBUG)) 
+			   {
+                  ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "wt_status_hook(): [%ld] set locale %s", tid, language);
+		       }
+
                setlocale(LC_NUMERIC, language);
             }
             else
             {
-               ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "wt_status_hook(): [%ld] set locale %s", tid, language);
+			   if (APLOG_IS_LEVEL(r->server, APLOG_DEBUG)) 
+			   {
+                  ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "wt_status_hook(): [%ld] set locale %s", tid, language);
+		       }
+
                setlocale(LC_NUMERIC, language);
             }
          }
          else
          {
-            ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "wt_status_hook(): [%ld] set default locale", tid);
+			if (APLOG_IS_LEVEL(r->server, APLOG_DEBUG)) 
+			{
+               ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "wt_status_hook(): [%ld] set default locale", tid);
+			}
+
             setlocale(LC_NUMERIC, "");
          }
       }
       else
       {
-         ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "wt_status_hook(): [%ld] set default locale", tid);
+		 if (APLOG_IS_LEVEL(r->server, APLOG_DEBUG)) 
+		 {
+            ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "wt_status_hook(): [%ld] set default locale", tid);
+		 }
+
          setlocale(LC_NUMERIC, "");
       }
 
@@ -2776,11 +3001,19 @@ static int wt_status_hook(request_rec *r, int flags)
          ap_rprintf(r, "</dl>");
       }
 
-      ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "wt_status_hook(): [%ld] end (OK)", tid);
+	  if (APLOG_IS_LEVEL(r->server, APLOG_DEBUG)) 
+	  {
+         ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "wt_status_hook(): [%ld] end (OK)", tid);
+	  }
+
       return OK;
    }
 
-   ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "wt_status_hook(): [%ld] end (DECLINED)", tid);
+   if (APLOG_IS_LEVEL(r->server, APLOG_DEBUG)) 
+   {
+      ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "wt_status_hook(): [%ld] end (DECLINED)", tid);
+   }
+
    return DECLINED;
 }
 
@@ -2833,7 +3066,6 @@ static const command_rec config_cmds[] =
    AP_INIT_TAKE1("WebTrackingRecordLifeTime", wt_record_life_time, NULL, RSRC_CONF, "WebTrackingRecordLifeTime <number in [5, 120]> minutes"),
    AP_INIT_TAKE1("WebTrackingApplicationIdFromHeader", wt_application_id_from_header,  NULL,  RSRC_CONF, "WebTrackingIdFromHeader <string>"),
    AP_INIT_RAW_ARGS("WebTrackingApplicationId", wt_application_id,  NULL,  RSRC_CONF, "WebTrackingApplicationId <string> <string> [<string>]"),
-   AP_INIT_RAW_ARGS("WebTrackingPrintWASUser", wt_print_was_user, NULL, RSRC_CONF, "WebTrackingPrintWASUser <string> <string> <string> <string> [<string>]"),
    AP_INIT_ITERATE("Listen", wt_get_listener, NULL, RSRC_CONF, "A port number or a numeric IP address and a port number, and an optional protocol"),
    { NULL }
 };
@@ -2877,12 +3109,16 @@ static void print_regex_table(server_rec *s, regex_table_t *table, const char *p
 {
    while (table != 0)
    {
-      ap_log_error(APLOG_MARK, APLOG_INFO, 0, s, "%s pattern = %s", prefix, table->pattern);
+      if (APLOG_IS_LEVEL(s, APLOG_INFO)) 
+      {
+         ap_log_error(APLOG_MARK, APLOG_INFO, 0, s, "%s pattern = %s", prefix, table->pattern);
+      }
+
       table = table->next;
    }
 }
 
-static const char *search_regex_table(const char *data, regex_table_t *table)
+const char *search_regex_table(const char *data, regex_table_t *table)
 {
    if (table == 0 || data == NULL) return NULL;
 
@@ -2922,48 +3158,10 @@ static void print_value_table(server_rec *s, value_table_t *table, const char *p
 {
    while (table != 0)
    {
-      ap_log_error(APLOG_MARK, APLOG_INFO, 0, s, "%s value = %s", prefix, table->value);
-      table = table->next;
-   }
-}
-
-static uri_table_t *add_was_entry(apr_pool_t *pool, uri_table_t *table, const char *host, const char *uri, aeskey_t *aeskey, const char *name)
-{
-   uri_table_t *ret = table;
-
-   if (table != 0)
-   {
-      if (!strcmp(table->uri, uri) && !strcasecmp(table->host, host)) return table;
-
-      while (table->next != 0) table = table->next;
-      table->next = apr_pcalloc(pool, sizeof(uri_table_t));
-      table = table->next;
-   }
-   else
-   {
-      ret = table = apr_pcalloc(pool, sizeof(uri_table_t));
-   }
-
-   
-   table->uri = uri;
-   table->uri_length = strlen(table->uri);
-   table->host = host;
-   table->all = strcmp(host, "*") == 0;
-   if (!table->all) table->host_length = strlen(table->host);
-   else table->host_length = 0;
-   table->value = "";
-   memcpy(&table->aeskey, aeskey, 16);
-   table->name = name;
-   table->next = 0;
-
-   return ret;
-}
-
-static void print_was_table(server_rec *s, uri_table_t *table, const char *prefix)
-{
-   while (table != 0)
-   {
-      ap_log_error(APLOG_MARK, APLOG_INFO, 0, s, "%s [host: %s, uri: %s, cookie: %s]", prefix, table->host, table->uri, table->name);
+      if (APLOG_IS_LEVEL(s, APLOG_INFO)) 
+      {
+         ap_log_error(APLOG_MARK, APLOG_INFO, 0, s, "%s value = %s", prefix, table->value);
+      }
       table = table->next;
    }
 }
@@ -3003,7 +3201,11 @@ static void print_uri_table(server_rec *s, uri_table_t *table, const char *prefi
 {
    while (table != 0)
    {
-      ap_log_error(APLOG_MARK, APLOG_INFO, 0, s, "%s [host: %s, uri: %s, value: %s]", prefix, table->host, table->uri, table->value);
+      if (APLOG_IS_LEVEL(s, APLOG_INFO)) 
+      {
+         ap_log_error(APLOG_MARK, APLOG_INFO, 0, s, "%s [host: %s, uri: %s, value: %s]", prefix, table->host, table->uri, table->value);
+      }
+
       table = table->next;
    }
 }
@@ -3061,124 +3263,6 @@ static uri_table_t *search_uri_table(uri_table_t *table, const char *host, const
    }
 
    return ret;
-}
-
-static const char *get_req_cookie(request_rec *r, const char *cname)
-{
-   const char *cookies_entry;
-
-   /*
-    * This supports Netscape version 0 cookies while being tolerant to
-    * some properties of RFC2109/2965 version 1 cookies:
-    * - case-insensitive match of cookie names
-    * - white space between the tokens
-    * It does not support the following version 1 features:
-    * - quoted strings as cookie values
-    * - commas to separate cookies
-    */
-
-   if ((cookies_entry = apr_table_get(r->headers_in, "Cookie")))
-   {
-      char *cookie, *last1, *last2;
-      char *cookies = apr_pstrdup(r->pool, cookies_entry);
-
-      while ((cookie = apr_strtok(cookies, ";", &last1)))
-      {
-         char *name = apr_strtok(cookie, "=", &last2);
-         /* last2 points to the next char following an '=' delim,
-            or the trailing NUL char of the string */
-         char *value = last2;
-         if (name && *name && value && *value)
-         {
-            char *last = value - 2;
-            /* Move past leading WS */
-            name += strspn(name, " \t");
-            while (last >= name && apr_isspace(*last))
-            {
-               *last = '\0';
-               --last;
-            }
-
-            if (!strcasecmp(name, cname))
-            {
-               /* last1 points to the next char following the ';' delim,
-                  or the trailing NUL char of the string */
-               last = last1 - (*last1 ? 2 : 1);
-               /* Move past leading WS */
-               value += strspn(value, " \t");
-               while (last >= value && apr_isspace(*last))
-               {
-                  *last = '\0';
-                  --last;
-               }
-
-               return ap_escape_logitem(r->pool, value);
-            }
-         }
-         /* Iterate the remaining tokens using apr_strtok(NULL, ...) */
-         cookies = NULL;
-      }
-   }
-   return NULL;
-}
-
-static const char *get_resp_cookie(request_rec *r, const char *cname)
-{
-   const char *cookies_entry;
-
-   /*
-    * This supports Netscape version 0 cookies while being tolerant to
-    * some properties of RFC2109/2965 version 1 cookies:
-    * - case-insensitive match of cookie names
-    * - white space between the tokens
-    * It does not support the following version 1 features:
-    * - quoted strings as cookie values
-    * - commas to separate cookies
-    */
-
-   if ((cookies_entry = apr_table_get(r->headers_out, "Set-Cookie")))
-   {
-      char *cookie, *last1, *last2;
-      char *cookies = apr_pstrdup(r->pool, cookies_entry);
-
-      while ((cookie = apr_strtok(cookies, ";", &last1)))
-      {
-         char *name = apr_strtok(cookie, "=", &last2);
-         /* last2 points to the next char following an '=' delim,
-            or the trailing NUL char of the string */
-         char *value = last2;
-         if (name && *name && value && *value)
-         {
-            char *last = value - 2;
-            /* Move past leading WS */
-            name += strspn(name, " \t");
-            while (last >= name && apr_isspace(*last))
-            {
-               *last = '\0';
-               --last;
-            }
-
-            if (!strcasecmp(name, cname))
-            {
-               /* last1 points to the next char following the ';' delim,
-                  or the trailing NUL char of the string */
-               last = last1 - (*last1 ? 2 : 1);
-               /* Move past leading WS */
-               value += strspn(value, " \t");
-               while (last >= value && apr_isspace(*last))
-               {
-                  *last = '\0';
-                  --last;
-               }
-
-               return ap_escape_logitem(r->pool, value);
-            }
-         }
-         /* Iterate the remaining tokens using apr_strtok(NULL, ...) */
-         cookies = NULL;
-      }
-   }
-   return NULL;
 }
 
 static short next_cookie(const char **beg, const char **end_name, const char **end_cookie)

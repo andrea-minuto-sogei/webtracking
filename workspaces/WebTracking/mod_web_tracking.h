@@ -9,6 +9,11 @@
 #include "httpd.h"
 #include "pthread.h"
 
+#ifdef __cplusplus
+extern "C" 
+{
+#endif 
+
 #include "wt_record.h"
 
 struct regex_table_s
@@ -175,19 +180,22 @@ struct wt_counter_s
 
 typedef struct wt_counter_s wt_counter_t;
 
+const char *search_regex_table(const char *, regex_table_t *);
+
+#ifdef __cplusplus
+}
+#endif
+
+#ifndef __cplusplus
+
 static regex_table_t *add_regex(apr_pool_t *, regex_table_t *, ap_regex_t *, const char *);
 static void print_regex_table(server_rec *, regex_table_t *, const char *);
-static const char *search_regex_table(const char *, regex_table_t *);
 static value_table_t *add_value(apr_pool_t *, value_table_t *, const char *);
 static void print_value_table(server_rec *, value_table_t *, const char *);
-static uri_table_t *add_was_entry(apr_pool_t *, uri_table_t *, const char *, const char *, aeskey_t *, const char *);
-static void print_was_table(server_rec *, uri_table_t *, const char *);
 static uri_table_t *add_uri_entry(apr_pool_t *, uri_table_t *, const char *, const char *, const char *);
 static void print_uri_table(server_rec *, uri_table_t *, const char *);
 static const uri_table_t *get_uri_table(uri_table_t *, const char *, const char *);
 static uri_table_t *search_uri_table(uri_table_t *, const char *, const char *);
-static const char* get_req_cookie(request_rec *, const char *);
-static const char* get_resp_cookie(request_rec *, const char *);
 static int log_headers(void *, const char *, const char *);
 static int log_headers_for_trace(void *, const char *, const char *);
 static int log_envvars(void *, const char *, const char *);
@@ -197,5 +205,7 @@ static const char *find(const char *, size_t, const char *, unsigned short);
 static const char *wt_inflate(apr_pool_t *, conn_rec *, unsigned char *, size_t, size_t *, int);
 static size_t base64encodelen(size_t);
 static size_t base64encode(const unsigned char *, size_t, unsigned char *);
+
+#endif
 
 #endif /* MOD_WEB_TRACKING_H_ */

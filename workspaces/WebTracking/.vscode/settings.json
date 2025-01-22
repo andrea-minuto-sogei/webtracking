@@ -5,6 +5,7 @@
     "C_Cpp.default.cppStandard": "c++23",
     "C_Cpp.default.cStandard": "c17",
     "files.associations": {
-        "wt_record.h": "c"
+        "wt_record.h": "c",
+        "http_request.h": "c"
     }
 }
