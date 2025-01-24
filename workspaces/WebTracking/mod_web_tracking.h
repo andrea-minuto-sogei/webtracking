@@ -25,14 +25,7 @@ struct regex_table_s
 
 typedef struct regex_table_s regex_table_t;
 
-struct value_table_s
-{
-   const char *value;
-   struct value_table_s *next;
-};
-
-typedef struct value_table_s value_table_t;
-
+/*
 struct map_table_s
 {
    const char *key;
@@ -41,8 +34,7 @@ struct map_table_s
 };
 
 typedef struct map_table_s map_table_t;
-
-typedef unsigned char aeskey_t[16];
+*/
 
 struct uri_table_s
 {
@@ -52,12 +44,18 @@ struct uri_table_s
    size_t host_length;
    int all;
    const char *value;  /* standard uri table */
-   aeskey_t aeskey;  /* was user table */
-   const char *name; /* was user table */
    struct uri_table_s *next;
 };
 
 typedef struct uri_table_s uri_table_t;
+
+struct value_table_s
+{
+   const char *value;
+   struct value_table_s *next;
+};
+
+typedef struct value_table_s value_table_t;
 
 struct wt_config_s
 {
@@ -110,6 +108,25 @@ struct wt_config_s
 };
 
 typedef struct wt_config_s wt_config_t;
+
+struct wt_counter_s
+{
+   apr_uint32_t t_request;
+   apr_uint32_t t_response;
+   apr_uint32_t t_body_request;
+   apr_uint32_t t_body_response;
+   pid_t pid;
+};
+
+typedef struct wt_counter_s wt_counter_t;
+
+const char *search_regex_table(const char *, regex_table_t *);
+
+#ifdef __cplusplus
+}
+#endif
+
+#ifndef __cplusplus
 
 struct record_s
 {
@@ -168,25 +185,6 @@ struct wt_output_filter_s
 };
 
 typedef struct wt_output_filter_s wt_output_filter_t;
-
-struct wt_counter_s
-{
-   apr_uint32_t t_request;
-   apr_uint32_t t_response;
-   apr_uint32_t t_body_request;
-   apr_uint32_t t_body_response;
-   pid_t pid;
-};
-
-typedef struct wt_counter_s wt_counter_t;
-
-const char *search_regex_table(const char *, regex_table_t *);
-
-#ifdef __cplusplus
-}
-#endif
-
-#ifndef __cplusplus
 
 static regex_table_t *add_regex(apr_pool_t *, regex_table_t *, ap_regex_t *, const char *);
 static void print_regex_table(server_rec *, regex_table_t *, const char *);

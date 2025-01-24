@@ -9,6 +9,7 @@ extern "C"
 #endif
 
 int post_read_request_impl(request_rec *r);
+int log_transaction_impl(request_rec *r);
 
 #ifdef __cplusplus
 }
