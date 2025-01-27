@@ -14,7 +14,7 @@ extern "C"
 {
 #endif 
 
-#include "wt_record.h"
+#include "wt_record.hpp"
 
 struct regex_table_s
 {
@@ -121,6 +121,7 @@ struct wt_counter_s
 typedef struct wt_counter_s wt_counter_t;
 
 const char *search_regex_table(const char *, regex_table_t *);
+uri_table_t *search_uri_table(uri_table_t *, const char *, const char *);
 
 #ifdef __cplusplus
 }
@@ -193,11 +194,6 @@ static void print_value_table(server_rec *, value_table_t *, const char *);
 static uri_table_t *add_uri_entry(apr_pool_t *, uri_table_t *, const char *, const char *, const char *);
 static void print_uri_table(server_rec *, uri_table_t *, const char *);
 static const uri_table_t *get_uri_table(uri_table_t *, const char *, const char *);
-static uri_table_t *search_uri_table(uri_table_t *, const char *, const char *);
-static int log_headers(void *, const char *, const char *);
-static int log_headers_for_trace(void *, const char *, const char *);
-static int log_envvars(void *, const char *, const char *);
-static int log_request_headers(void *, const char *, const char *);
 static const char *s_elapsed(apr_pool_t *, apr_time_t);
 static const char *find(const char *, size_t, const char *, unsigned short);
 static const char *wt_inflate(apr_pool_t *, conn_rec *, unsigned char *, size_t, size_t *, int);

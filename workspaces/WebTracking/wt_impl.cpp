@@ -474,8 +474,6 @@ std::string base64encode(const std::string &input) noexcept
 
 /* APACHE MODULE IMPLEMENTATION FUNCTIONS */
 
-#define PATH_MAX 1024
-
 // Apache Web Server Header Files
 #include "httpd.h"
 #include "http_config.h"
@@ -499,7 +497,8 @@ std::string base64encode(const std::string &input) noexcept
 #include <sys/syscall.h>
 
 // C++ implementation functions header file
-#include "wt_data.hpp"
+#include "wt_impl.hpp"
+#include "wt_record.hpp"
 
 // Module header file
 #include "mod_web_tracking.h" 
@@ -537,7 +536,7 @@ static apr_uint32_t next_id = 0;
 
 struct record_cpp
 {
-   std::string data;
+   std::string &data;
    wt_config_t *conf;
 };
 
@@ -657,8 +656,8 @@ int log_headers_cpp(void *rec, const char *key, const char *value)
       }
    }
 
-   if (is_printable) record->data = format_string("%s|\"%s=%s\"", record->data.c_str(), key, header_value.c_str());
-   else record->data = format_string("%s|\"%s\"", record->data.c_str(), key);
+   if (is_printable) record->data.append(format_string("|\"%s=%s\"", key, header_value.c_str()));
+   else record->data.append(format_string("|\"%s\"", key));
    return 1;
 }
 
@@ -666,7 +665,7 @@ extern "C"
 int log_headers_for_trace_cpp(void *rec, const char *key, const char *value)
 {
    record_cpp *record = static_cast<record_cpp *>(rec);
-   record->data = format_string("%s|\"%s=%s\"", record->data.c_str(), key, value);
+   record->data.append(format_string("|\"%s=%s\"", key, value));
    return 1;
 }
 
@@ -682,7 +681,7 @@ int log_envvars_cpp(void *rec, const char *key, const char *value)
       {
          if (!strcasecmp(key, scan->value))
          {
-            record->data = format_string("%s|\"ENV:%s=%s\"", record->data.c_str(), key, value);
+            record->data.append(format_string("|\"ENV:%s=%s\"", key, value));
             return 1;
          }
       }
@@ -756,7 +755,7 @@ int post_read_request_impl(request_rec *r)
    if (!host) host = r->hostname;
    if (APLOG_IS_LEVEL(r->server, APLOG_DEBUG)) ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "post_read_request(): [%ld] Host = %s", tid, host);
 
-   // either get or build uuid
+   // either get or build an uuid
    if (APLOG_IS_LEVEL(r->server, APLOG_DEBUG)) ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "post_read_request(): [%ld] get or build uuid", tid);
    std::string uuid_temp;
    const char *uuid = apr_table_get(r->headers_in, conf->uuid_header);
@@ -772,6 +771,8 @@ int post_read_request_impl(request_rec *r)
       }
    }
 
+   uuid_temp.assign(format_string("%s:%s", conf->id, uuid));
+   uuid = uuid_temp.c_str();
    if (APLOG_IS_LEVEL(r->server, APLOG_DEBUG)) ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "post_read_request(): [%ld] uuid = %s", tid, uuid);
 
    // check whether we got an host to be tracked
@@ -1013,8 +1014,8 @@ int post_read_request_impl(request_rec *r)
                                             timestamp, timezone, remote_ip,
                                             r->protocol, r->method, scheme, host, r->uri);
 
-   if (r->args) request_data = format_string("%s?%s\"", request_data.c_str(), r->args);
-   else request_data = format_string("%s\"", request_data.c_str());
+   if (r->args) request_data.append(format_string("?%s\"", r->args));
+   else request_data.append(1, '\"');
 
    // get content type
    const char *content_type = apr_table_get(r->headers_in, "Content-Type");
@@ -1025,7 +1026,7 @@ int post_read_request_impl(request_rec *r)
    if (!content_length) content_length = "0";
    if (APLOG_IS_LEVEL(r->server, APLOG_DEBUG))
       ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "post_read_request(): [%ld] Content-Length = %s", tid, content_length);
-   request_data = format_string("%s|\"%s\"|\"%s\"", request_data.c_str(), content_type, content_length);
+   request_data.append(format_string("|\"%s\"|\"%s\"", content_type, content_length));
    
    // get transfer encoding
    const char *transfer_encoding = apr_table_get(r->headers_in, "Transfer-Encoding");
@@ -1034,25 +1035,29 @@ int post_read_request_impl(request_rec *r)
       ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "post_read_request(): [%ld] Transfer-Encoding = %s", tid, transfer_encoding);
 
    // auxiliary object
-   record_cpp record { .conf { conf } };
+   record_cpp record { request_data, conf };
 
-   // add headers   
-   request_data = format_string("%s|\"HEADERS\"|\"WEBTRACKING-VERSION=%s\"", request_data.c_str(), version);
+   // add headers
+   if (APLOG_IS_LEVEL(r->server, APLOG_DEBUG))
+      ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "post_read_request(): [%ld] print request headers ...", tid);
+   request_data.append(format_string("|\"HEADERS\"|\"WEBTRACKING-VERSION=%s\"", version));
    if (!trace_uri) apr_table_do(log_headers_cpp, &record, r->headers_in, NULL);
    else apr_table_do(log_headers_for_trace_cpp, &record, r->headers_in, NULL);
-   request_data.append(std::move(record.data));
 
    // add environment variable if enabled
    if (APLOG_IS_LEVEL(r->server, APLOG_DEBUG))
       ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "post_read_request(): [%ld] print environment variables ...", tid);
    if (conf->envvar_table) apr_table_do(log_envvars_cpp, &record, r->subprocess_env, NULL);
-   request_data.append(std::move(record.data));
 
    // append uuid to the request headers
    apr_table_setn(r->headers_in, conf->uuid_header, apr_pstrdup(r->pool, uuid));
 
    if (APLOG_IS_LEVEL(r->server, APLOG_DEBUG))
+   {
       ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "post_read_request(): [%ld] **** START END OF REQUEST ****", tid);
+      ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "post_read_request(): [%ld] %lu - request_data: %s", 
+                   tid, request_data.length(), request_data.c_str());
+   }
 
    // BASE64 encoding
    apr_time_t start_b64 = apr_time_now();
@@ -1064,7 +1069,10 @@ int post_read_request_impl(request_rec *r)
    }      
 
    // prefix with the request markup
-   request_data.assign(format_string("**REQUEST**|%s", record_b64));
+   request_data.assign("**REQUEST**|").append(record_b64);
+   record_b64.clear();
+   if (APLOG_IS_LEVEL(r->server, APLOG_DEBUG)) ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "post_read_request(): [%ld] %lu - request_data (b64): %s", 
+                                                            tid, request_data.length(), request_data.c_str());
 
    // save request data to a note
    char * data = new char[request_data.length() + 1]; 
@@ -1073,7 +1081,11 @@ int post_read_request_impl(request_rec *r)
    apr_table_setn(r->notes, "request_data", data);
 
    if (APLOG_IS_LEVEL(r->server, APLOG_DEBUG))
+   {
+      ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "post_read_request(): [%ld] data length = %lu", 
+                   tid, strlen(data));
       ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "post_read_request(): [%ld] **** FINISH END OF REQUEST ****", tid);
+   }
 
    // assess whether there is the need to enable a filter and prepare either one or both or none
    unsigned short input_filter = strcmp(r->method, "GET") != 0 && strcmp(r->method, "DELETE") != 0;
@@ -1164,6 +1176,7 @@ int post_read_request_impl(request_rec *r)
 
    /******************* to be removed *************************/ 
    input_filter = output_filter = output_header = 0;
+   /***********************************************************/
 
    if (input_filter == 1 || output_filter == 1 || output_header == 1)
    {
@@ -1319,7 +1332,7 @@ int post_read_request_impl(request_rec *r)
 }
 
 extern "C"
-int log_transaction(request_rec *r)
+int log_transaction_impl(request_rec *r)
 {
    pthread_t tid = syscall(SYS_gettid);
 
@@ -1428,40 +1441,186 @@ int log_transaction(request_rec *r)
                                              conn_is_https(r->connection, conf, r->headers_in) ? "https" : "http",
                                              host, r->uri);
 
-   if (r->args) response_data = format_string("%s?%s\"", response_data.c_str(), r->args);
-   else response_data = format_string("%s\"", response_data.c_str());
+   if (r->args) response_data.append(format_string("?%s\"", r->args));
+   else response_data.append(1, '\"');
 
    // get content type
    const char *content_type = apr_table_get(r->headers_in, "Content-Type");
    if (!content_type) content_type = "-";
    if (APLOG_IS_LEVEL(r->server, APLOG_DEBUG))
       ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "log_transaction(): [%ld] Content-Type = %s", tid, content_type);   
-   response_data = format_string("%s|\"%s\"|\"%ld\"|\"HEADERS\"", response_data.c_str(), content_type, r->bytes_sent);
+   response_data.append(format_string("|\"%s\"|\"%ld\"|\"HEADERS\"", content_type, r->bytes_sent));
 
    // auxiliary object
-   record_cpp record { .conf { conf } };
+   record_cpp record { response_data, conf };
 
    // add header
    const char *trace_uri_matched = search_regex_table(r->uri, conf->trace_uri_table);
    if (!trace_uri_matched)
    {
       apr_table_do(log_headers_cpp, &record, r->headers_out, NULL);
-      response_data.append(std::move(record.data));
    }
    else
    {
       if (APLOG_IS_LEVEL(r->server, APLOG_DEBUG)) 
          ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "log_transaction(): [%ld] matched Trace URI = %s", tid, trace_uri_matched);
       apr_table_do(log_headers_for_trace_cpp, &record, r->headers_out, NULL);
-      response_data.append(std::move(record.data));
    }
 
    // add environment variable if enabled
    if (APLOG_IS_LEVEL(r->server, APLOG_DEBUG)) 
       ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "log_transaction(): [%ld] print environment variables ...", tid);
    if (conf->envvar_table) apr_table_do(log_envvars_cpp, &record, r->subprocess_env, NULL);
-   response_data.append(std::move(record.data));
 
+   if (APLOG_IS_LEVEL(r->server, APLOG_DEBUG))
+   { 
+      ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "log_transaction(): [%ld] **** START END OF RESPONSE ****", tid);
+      ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "log_transaction(): [%ld] %lu - response_data: %s", 
+                   tid, response_data.length(), response_data.c_str());
+   }
+
+   // retrieve appid
+   const char * appid = 0;
+   if (conf->appid_header) appid = apr_table_get(r->headers_out, conf->appid_header);
+   if (!appid)
+   {
+      // retrieve appid from directives
+      appid = "";
+      if (APLOG_IS_LEVEL(r->server, APLOG_DEBUG)) 
+         ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "log_transaction(): [%ld] retrieve application id from directives", tid);
+      
+      uri_table_t *t = search_uri_table(conf->appid_table, host, r->uri);
+      if (t != NULL) appid = t->value;
+   }
+
+   // print out appid
+   if (APLOG_IS_LEVEL(r->server, APLOG_DEBUG)) 
+      ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "log_transaction(): [%ld] appid = [%s]", tid, appid);
+
+   // BASE64 encoding
+   apr_time_t start_b64 = apr_time_now();
+   std::string record_b64 = base64encode(response_data);
+   if (APLOG_IS_LEVEL(r->server, APLOG_DEBUG))
+   {
+      std::string elapsed_b64 { to_string(apr_time_now() - start_b64) };
+      ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "log_transaction(): [%ld] BASE64 encoding elapsed time = %s", tid, elapsed_b64.c_str());
+   }   
+
+   // prefix with the request markup
+   response_data.assign("**RESPONSE**|").append(record_b64);
+   record_b64.clear();
+   if (APLOG_IS_LEVEL(r->server, APLOG_DEBUG))
+   {
+      ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "log_transaction(): [%ld] %lu - response_data (b64): %s", 
+                   tid, response_data.length(), response_data.c_str());
+   }
+
+   // get request, request_body and response body part
+   const char *request_data = apr_table_get(r->notes, "request_data");
+   const char *request_body_data = apr_table_get(r->notes, "request_body_data");
+   const char *response_body_data = apr_table_get(r->notes, "response_body_data");
+
+   // request data is valid?
+   if (request_data != NULL)
+   {
+      if (APLOG_IS_LEVEL(r->server, APLOG_DEBUG))
+      { 
+         ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "log_transaction(): [%ld] write final record appending all parts", tid);
+         ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "log_transaction(): [%ld] request_data length = %lu", tid, strlen(request_data));
+         if (request_body_data) ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "log_transaction(): [%ld] request_body_data length = %lu", 
+                                             tid, strlen(request_body_data));
+         ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "log_transaction(): [%ld] response_data length = %lu", tid, response_data.length());
+         if (response_body_data) ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "log_transaction(): [%ld] response_body_data length = %lu", 
+                                              tid, strlen(response_body_data));
+      }
+
+      // create record prefix with uuid and appid
+      if (APLOG_IS_LEVEL(r->server, APLOG_DEBUG)) 
+         ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "log_transaction(): [%ld] uuid = %s, appid = %s", tid, uuid, appid);
+
+      // retrieve zoned timestamp
+      char timestamp[36] = "\"";
+      apr_size_t retsize;
+      apr_time_t current = apr_time_now();
+      apr_time_exp_t current_time;
+      apr_time_exp_lt(&current_time, current);
+      apr_strftime(timestamp + 1, &retsize, 64, "%F %T", &current_time);
+      sprintf(timestamp + strlen(timestamp), ".%06ld\"", (current % 1000000L));
+
+      // create record data
+      
+      // timestamp, uuid, appid and request
+      std::string record_data = format_string("%s|\"%s\"|\"%s\"|%s", timestamp, uuid, appid, request_data);
+      delete [] request_data;
+      apr_table_unset(r->notes, "request_data");
+      
+      // request body
+      if (request_body_data) 
+      {
+         record_data.append(1, '|').append(request_body_data);
+         delete [] request_body_data;
+         apr_table_unset(r->notes, "request_body_data");
+      }
+
+      // response
+      record_data.append(1, '|').append(response_data);
+      response_data.clear();
+
+      // response body
+      if (response_body_data)
+      {
+         record_data.append(1, '|').append(response_body_data);
+         delete [] response_body_data;
+         apr_table_unset(r->notes, "response_body_data");
+      }
+
+      if (APLOG_IS_LEVEL(r->server, APLOG_DEBUG)) 
+         ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "log_transaction(): [%ld] record_data length = %lu", tid, record_data.length());
+
+      // lock types
+      auto apr_anylock_none = apr_anylock_t::apr_anylock_none;                /* None */
+      auto apr_anylock_procmutex = apr_anylock_t::apr_anylock_procmutex;      /* Process-based */
+      auto apr_anylock_threadmutex = apr_anylock_t::apr_anylock_threadmutex;  /* Thread-based */
+      auto apr_anylock_readlock = apr_anylock_t::apr_anylock_readlock;        /* Read lock */
+      auto apr_anylock_writelock = apr_anylock_t::apr_anylock_writelock;      /* Write lock */
+      
+      // write to file
+      apr_status_t rtl = APR_ANYLOCK_LOCK(&conf->record_thread_mutex);
+      if (rtl == APR_SUCCESS)
+      {
+         // write record log data
+         bool ok = wt_record_write(conf->wt_record_c, record_data);
+         record_data.clear();
+         
+         // release all locks
+         APR_ANYLOCK_UNLOCK(&conf->record_thread_mutex);
+
+         // print out record log data outcome
+         if (ok)
+         {
+            if (APLOG_IS_LEVEL(r->server, APLOG_DEBUG)) 
+               ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "log_transaction(): [%ld] successfully written %lu chars", tid, record_data.length());
+         } 
+         else
+         {
+            if (APLOG_IS_LEVEL(r->server, APLOG_ALERT)) 
+               ap_log_error(APLOG_MARK, APLOG_ALERT, 0, r->server, "ALERT: failed to write to log file record: uuid = %s, bytes to write = %ld", uuid, record_data.length());
+         }
+      }
+      else
+      {
+         char error[1024];
+         apr_strerror(rtl, error, 1024);
+         if (APLOG_IS_LEVEL(r->server, APLOG_ALERT)) 
+            ap_log_error(APLOG_MARK, APLOG_ALERT, 0, r->server, "ALERT: Record with uuid = %s failed to acquire a cross-thread lock (err: %s)", uuid, error);
+      }
+   }
+   else
+   {
+      if (APLOG_IS_LEVEL(r->server, APLOG_DEBUG)) 
+         ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "log_transaction(): [%ld] request data is NULL!! Nothing to do!", tid);
+   }
+   
    // Exit
    if (APLOG_IS_LEVEL(r->server, APLOG_DEBUG))
    {

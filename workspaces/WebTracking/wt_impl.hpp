@@ -1,5 +1,5 @@
-#ifndef WT_DATA_HPP_
-#define WT_DATA_HPP_
+#ifndef WT_IMPL_HPP_
+#define WT_IMPL_HPP_
 
 #include "http_request.h"
 
