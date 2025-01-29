@@ -4,6 +4,7 @@
       "name": "Linux",
       "includePath": [
         "${workspaceFolder}/**",
+        "${workspaceFolder}/zlib",
         "/home/webihs/IHS/include"
       ],
       "defines": [],

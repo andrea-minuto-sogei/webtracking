@@ -24,7 +24,6 @@ static void wt_record_release_internal(wt_record *record)
 
     // close and remove current file in a different thread
     auto handle = std::async(std::launch::async, wt_record_release, record_copy);
-    handle.wait();
 }
 
 extern "C"
@@ -65,7 +64,7 @@ bool wt_record_write(wt_record *record, const std::string &text)
         uint64_t minutes_from_start = (current_time - record->start) / 60UL;
 
         // is not beyond given minutes
-        if (minutes_from_start < record->minutes && current_size < 1073741824)
+        if (minutes_from_start < record->minutes && current_size < 1'073'741'824)
         {
             std::println(record->handle, "{}", text);
             fflush(record->handle);

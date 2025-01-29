@@ -25,17 +25,6 @@ struct regex_table_s
 
 typedef struct regex_table_s regex_table_t;
 
-/*
-struct map_table_s
-{
-   const char *key;
-   const char *value;
-   struct map_table_s *next;
-};
-
-typedef struct map_table_s map_table_t;
-*/
-
 struct uri_table_s
 {
    const char *uri;
@@ -129,64 +118,6 @@ uri_table_t *search_uri_table(uri_table_t *, const char *, const char *);
 
 #ifndef __cplusplus
 
-struct record_s
-{
-   char *data;
-   wt_config_t *conf;
-   apr_pool_t *pool;
-};
-
-typedef struct record_s record_t;
-
-struct body_node_s
-{
-   const char *buf;
-   apr_size_t length;
-   struct body_node_s *next;
-};
-
-typedef struct body_node_s body_node_t;
-
-struct wt_input_filter_s
-{
-   pthread_t tid;
-   const char *uuid;
-   const char *uri;  
-   unsigned short trace_uri;     /* values: 0 or 1 */
-   apr_size_t content_length_i;
-   const char *content_type;
-   wt_config_t *conf;
-   unsigned short cancelled_i;   /* values: 0 or 1 */
-   apr_time_t start_i;
-   apr_time_t elapsed;
-   apr_time_t request_time;
-   apr_size_t length_i;
-   short getline;
-   body_node_t *first_bn, *last_bn;
-};
-
-typedef struct wt_input_filter_s wt_input_filter_t;
-
-struct wt_output_filter_s
-{
-   pthread_t tid;             
-   const char *uuid;            
-   const char *uri;          
-   unsigned short trace_uri;     /* values: 0 or 1 */
-   body_node_t *first_bn, *last_bn;
-   apr_size_t length_o;
-   wt_config_t *conf;
-   unsigned short cancelled_o;   /* values: 0 or 1 */
-   unsigned short end_o;         /* values: 0 or 1 */
-   apr_time_t start_o;
-   apr_time_t elapsed;
-   apr_time_t request_time;
-   unsigned short output_header; /* values: 0 or 1 */
-   unsigned short output_filter; /* values: 0 or 1 */
-};
-
-typedef struct wt_output_filter_s wt_output_filter_t;
-
 static regex_table_t *add_regex(apr_pool_t *, regex_table_t *, ap_regex_t *, const char *);
 static void print_regex_table(server_rec *, regex_table_t *, const char *);
 static value_table_t *add_value(apr_pool_t *, value_table_t *, const char *);
@@ -194,9 +125,6 @@ static void print_value_table(server_rec *, value_table_t *, const char *);
 static uri_table_t *add_uri_entry(apr_pool_t *, uri_table_t *, const char *, const char *, const char *);
 static void print_uri_table(server_rec *, uri_table_t *, const char *);
 static const uri_table_t *get_uri_table(uri_table_t *, const char *, const char *);
-static const char *s_elapsed(apr_pool_t *, apr_time_t);
-static const char *find(const char *, size_t, const char *, unsigned short);
-static const char *wt_inflate(apr_pool_t *, conn_rec *, unsigned char *, size_t, size_t *, int);
 static size_t base64encodelen(size_t);
 static size_t base64encode(const unsigned char *, size_t, unsigned char *);
 
