@@ -20,7 +20,7 @@ static std::string format_string(const char *format, ...)
    std::va_list args;
    va_start(args, format);
 
-   std::string fmt{format};
+   std::string fmt { format };
    auto fmt_begin = std::sregex_iterator(fmt.begin(), fmt.end(), format_re);
    auto fmt_end = std::sregex_iterator();
 
@@ -43,10 +43,8 @@ static std::string format_string(const char *format, ...)
 
       if (type == "f" || type == "F")
       {
-         if (!f_width.empty())
-            w = std::stoi(f_width);
-         if (!f_precision.empty())
-            p = std::stoi(f_precision);
+         if (!f_width.empty()) w = std::stoi(f_width);
+         if (!f_precision.empty()) p = std::stoi(f_precision);
       }
       else
       {
@@ -68,62 +66,42 @@ static std::string format_string(const char *format, ...)
          if (ext.empty())
          {
             int i = va_arg(args, int);
-            if (fill_with_zero && is_pound)
-               formatted.append(std::format("{:+0{}d}", i, w));
-            else if (fill_with_zero)
-               formatted.append(std::format("{:0{}d}", i, w));
-            else if (is_pound)
-               formatted.append(std::format("{:+{}d}", i, w));
-            else
-               formatted.append(std::format("{:{}d}", i, w));
+            if (fill_with_zero && is_pound) formatted.append(std::format("{:+0{}d}", i, w));
+            else if (fill_with_zero) formatted.append(std::format("{:0{}d}", i, w));
+            else if (is_pound) formatted.append(std::format("{:+{}d}", i, w));
+            else formatted.append(std::format("{:{}d}", i, w));
          }
          else if (ext == "h")
          {
             short s = va_arg(args, int);
-            if (fill_with_zero && is_pound)
-               formatted.append(std::format("{:+0{}d}", s, w));
-            else if (fill_with_zero)
-               formatted.append(std::format("{:0{}d}", s, w));
-            else if (is_pound)
-               formatted.append(std::format("{:+{}d}", s, w));
-            else
-               formatted.append(std::format("{:{}d}", s, w));
+            if (fill_with_zero && is_pound) formatted.append(std::format("{:+0{}d}", s, w));
+            else if (fill_with_zero) formatted.append(std::format("{:0{}d}", s, w));
+            else if (is_pound) formatted.append(std::format("{:+{}d}", s, w));
+            else formatted.append(std::format("{:{}d}", s, w));
          }
          else if (ext == "hh")
          {
             char c = va_arg(args, int);
-            if (fill_with_zero && is_pound)
-               formatted.append(std::format("{:+0{}d}", c, w));
-            else if (fill_with_zero)
-               formatted.append(std::format("{:0{}d}", c, w));
-            else if (is_pound)
-               formatted.append(std::format("{:+{}d}", c, w));
-            else
-               formatted.append(std::format("{:{}d}", c, w));
+            if (fill_with_zero && is_pound) formatted.append(std::format("{:+0{}d}", c, w));
+            else if (fill_with_zero) formatted.append(std::format("{:0{}d}", c, w));
+            else if (is_pound) formatted.append(std::format("{:+{}d}", c, w));
+            else formatted.append(std::format("{:{}d}", c, w));
          }
          else if (ext == "l")
          {
             long l = va_arg(args, long);
-            if (fill_with_zero && is_pound)
-               formatted.append(std::format("{:+0{}d}", l, w));
-            else if (fill_with_zero)
-               formatted.append(std::format("{:0{}d}", l, w));
-            else if (is_pound)
-               formatted.append(std::format("{:+{}d}", l, w));
-            else
-               formatted.append(std::format("{:{}d}", l, w));
+            if (fill_with_zero && is_pound) formatted.append(std::format("{:+0{}d}", l, w));
+            else if (fill_with_zero) formatted.append(std::format("{:0{}d}", l, w));
+            else if (is_pound) formatted.append(std::format("{:+{}d}", l, w));
+            else formatted.append(std::format("{:{}d}", l, w));
          }
          else if (ext == "ll")
          {
             long long ll = va_arg(args, long long);
-            if (fill_with_zero && is_pound)
-               formatted.append(std::format("{:+0{}d}", ll, w));
-            else if (fill_with_zero)
-               formatted.append(std::format("{:0{}d}", ll, w));
-            else if (is_pound)
-               formatted.append(std::format("{:+{}d}", ll, w));
-            else
-               formatted.append(std::format("{:{}d}", ll, w));
+            if (fill_with_zero && is_pound) formatted.append(std::format("{:+0{}d}", ll, w));
+            else if (fill_with_zero) formatted.append(std::format("{:0{}d}", ll, w));
+            else if (is_pound) formatted.append(std::format("{:+{}d}", ll, w));
+            else formatted.append(std::format("{:{}d}", ll, w));
          }
       }
       else if (type == "x")
@@ -131,62 +109,42 @@ static std::string format_string(const char *format, ...)
          if (ext.empty())
          {
             unsigned int i = va_arg(args, unsigned int);
-            if (fill_with_zero && is_pound)
-               formatted.append(std::format("{:#0{}x}", i, w));
-            else if (fill_with_zero)
-               formatted.append(std::format("{:{}x}", i, w));
-            else if (is_pound)
-               formatted.append(std::format("{:#{}x}", i, w));
-            else
-               formatted.append(std::format("{:{}x}", i, w));
+            if (fill_with_zero && is_pound) formatted.append(std::format("{:#0{}x}", i, w));
+            else if (fill_with_zero) formatted.append(std::format("{:{}x}", i, w));
+            else if (is_pound) formatted.append(std::format("{:#{}x}", i, w));
+            else formatted.append(std::format("{:{}x}", i, w));
          }
          else if (ext == "h")
          {
             unsigned short s = va_arg(args, unsigned int);
-            if (fill_with_zero && is_pound)
-               formatted.append(std::format("{:#0{}x}", s, w));
-            else if (fill_with_zero)
-               formatted.append(std::format("{:0{}x}", s, w));
-            else if (is_pound)
-               formatted.append(std::format("{:#{}x}", s, w));
-            else
-               formatted.append(std::format("{:{}x}", s, w));
+            if (fill_with_zero && is_pound) formatted.append(std::format("{:#0{}x}", s, w));
+            else if (fill_with_zero) formatted.append(std::format("{:0{}x}", s, w));
+            else if (is_pound) formatted.append(std::format("{:#{}x}", s, w));
+            else formatted.append(std::format("{:{}x}", s, w));
          }
          else if (ext == "hh")
          {
             unsigned char c = va_arg(args, unsigned int);
-            if (fill_with_zero && is_pound)
-               formatted.append(std::format("{:#0{}x}", c, w));
-            else if (fill_with_zero)
-               formatted.append(std::format("{:0{}x}", c, w));
-            else if (is_pound)
-               formatted.append(std::format("{:#{}x}", c, w));
-            else
-               formatted.append(std::format("{:{}x}", c, w));
+            if (fill_with_zero && is_pound) formatted.append(std::format("{:#0{}x}", c, w));
+            else if (fill_with_zero) formatted.append(std::format("{:0{}x}", c, w));
+            else if (is_pound) formatted.append(std::format("{:#{}x}", c, w));
+            else formatted.append(std::format("{:{}x}", c, w));
          }
          else if (ext == "l")
          {
             unsigned long l = va_arg(args, unsigned long);
-            if (fill_with_zero && is_pound)
-               formatted.append(std::format("{:#0{}x}", l, w));
-            else if (fill_with_zero)
-               formatted.append(std::format("{:0{}x}", l, w));
-            else if (is_pound)
-               formatted.append(std::format("{:#{}x}", l, w));
-            else
-               formatted.append(std::format("{:{}x}", l, w));
+            if (fill_with_zero && is_pound) formatted.append(std::format("{:#0{}x}", l, w));
+            else if (fill_with_zero) formatted.append(std::format("{:0{}x}", l, w));
+            else if (is_pound) formatted.append(std::format("{:#{}x}", l, w));
+            else formatted.append(std::format("{:{}x}", l, w));
          }
          else if (ext == "ll")
          {
             unsigned long long ll = va_arg(args, unsigned long long);
-            if (fill_with_zero && is_pound)
-               formatted.append(std::format("{:#0{}x}", ll, w));
-            else if (fill_with_zero)
-               formatted.append(std::format("{:0{}x}", ll, w));
-            else if (is_pound)
-               formatted.append(std::format("{:#{}x}", ll, w));
-            else
-               formatted.append(std::format("{:{}x}", ll, w));
+            if (fill_with_zero && is_pound) formatted.append(std::format("{:#0{}x}", ll, w));
+            else if (fill_with_zero) formatted.append(std::format("{:0{}x}", ll, w));
+            else if (is_pound) formatted.append(std::format("{:#{}x}", ll, w));
+            else formatted.append(std::format("{:{}x}", ll, w));
          }
       }
       else if (type == "X")
@@ -194,62 +152,42 @@ static std::string format_string(const char *format, ...)
          if (ext.empty())
          {
             unsigned int i = va_arg(args, unsigned int);
-            if (fill_with_zero && is_pound)
-               formatted.append(std::format("{:#0{}X}", i, w));
-            else if (fill_with_zero)
-               formatted.append(std::format("{:0{}X}", i, w));
-            else if (is_pound)
-               formatted.append(std::format("{:#{}X}", i, w));
-            else
-               formatted.append(std::format("{:{}X}", i, w));
+            if (fill_with_zero && is_pound) formatted.append(std::format("{:#0{}X}", i, w));
+            else if (fill_with_zero) formatted.append(std::format("{:0{}X}", i, w));
+            else if (is_pound) formatted.append(std::format("{:#{}X}", i, w));
+            else formatted.append(std::format("{:{}X}", i, w));
          }
          else if (ext == "h")
          {
             unsigned short s = va_arg(args, unsigned int);
-            if (fill_with_zero && is_pound)
-               formatted.append(std::format("{:#0{}X}", s, w));
-            else if (fill_with_zero)
-               formatted.append(std::format("{:0{}X}", s, w));
-            else if (is_pound)
-               formatted.append(std::format("{:#{}X}", s, w));
-            else
-               formatted.append(std::format("{:{}X}", s, w));
+            if (fill_with_zero && is_pound) formatted.append(std::format("{:#0{}X}", s, w));
+            else if (fill_with_zero) formatted.append(std::format("{:0{}X}", s, w));
+            else if (is_pound) formatted.append(std::format("{:#{}X}", s, w));
+            else formatted.append(std::format("{:{}X}", s, w));
          }
          else if (ext == "hh")
          {
             unsigned char c = va_arg(args, unsigned int);
-            if (fill_with_zero && is_pound)
-               formatted.append(std::format("{:#0{}X}", c, w));
-            else if (fill_with_zero)
-               formatted.append(std::format("{:0{}X}", c, w));
-            else if (is_pound)
-               formatted.append(std::format("{:#{}X}", c, w));
-            else
-               formatted.append(std::format("{:{}X}", c, w));
+            if (fill_with_zero && is_pound) formatted.append(std::format("{:#0{}X}", c, w));
+            else if (fill_with_zero) formatted.append(std::format("{:0{}X}", c, w));
+            else if (is_pound) formatted.append(std::format("{:#{}X}", c, w));
+            else formatted.append(std::format("{:{}X}", c, w));
          }
          else if (ext == "l")
          {
             unsigned long l = va_arg(args, unsigned long);
-            if (fill_with_zero && is_pound)
-               formatted.append(std::format("{:#0{}X}", l, w));
-            else if (fill_with_zero)
-               formatted.append(std::format("{:0{}X}", l, w));
-            else if (is_pound)
-               formatted.append(std::format("{:#{}X}", l, w));
-            else
-               formatted.append(std::format("{:{}X}", l, w));
+            if (fill_with_zero && is_pound) formatted.append(std::format("{:#0{}X}", l, w));
+            else if (fill_with_zero) formatted.append(std::format("{:0{}X}", l, w));
+            else if (is_pound) formatted.append(std::format("{:#{}X}", l, w));
+            else formatted.append(std::format("{:{}X}", l, w));
          }
          else if (ext == "ll")
          {
             unsigned long long ll = va_arg(args, unsigned long long);
-            if (fill_with_zero && is_pound)
-               formatted.append(std::format("{:#0{}X}", ll, w));
-            else if (fill_with_zero)
-               formatted.append(std::format("{:0{}X}", ll, w));
-            else if (is_pound)
-               formatted.append(std::format("{:#{}X}", ll, w));
-            else
-               formatted.append(std::format("{:{}X}", ll, w));
+            if (fill_with_zero && is_pound) formatted.append(std::format("{:#0{}X}", ll, w));
+            else if (fill_with_zero) formatted.append(std::format("{:0{}X}", ll, w));
+            else if (is_pound) formatted.append(std::format("{:#{}X}", ll, w));
+            else formatted.append(std::format("{:{}X}", ll, w));
          }
       }
       else if (type == "o")
@@ -257,62 +195,42 @@ static std::string format_string(const char *format, ...)
          if (ext.empty())
          {
             unsigned int i = va_arg(args, unsigned int);
-            if (fill_with_zero && is_pound)
-               formatted.append(std::format("{:#0{}o}", i, w));
-            else if (fill_with_zero)
-               formatted.append(std::format("{:0{}o}", i, w));
-            else if (is_pound)
-               formatted.append(std::format("{:#{}o}", i, w));
-            else
-               formatted.append(std::format("{:{}o}", i, w));
+            if (fill_with_zero && is_pound) formatted.append(std::format("{:#0{}o}", i, w));
+            else if (fill_with_zero) formatted.append(std::format("{:0{}o}", i, w));
+            else if (is_pound) formatted.append(std::format("{:#{}o}", i, w));
+            else formatted.append(std::format("{:{}o}", i, w));
          }
          else if (ext == "h")
          {
             unsigned short s = va_arg(args, unsigned int);
-            if (fill_with_zero && is_pound)
-               formatted.append(std::format("{:#0{}o}", s, w));
-            else if (fill_with_zero)
-               formatted.append(std::format("{:0{}o}", s, w));
-            else if (is_pound)
-               formatted.append(std::format("{:#{}o}", s, w));
-            else
-               formatted.append(std::format("{:{}o}", s, w));
+            if (fill_with_zero && is_pound) formatted.append(std::format("{:#0{}o}", s, w));
+            else if (fill_with_zero) formatted.append(std::format("{:0{}o}", s, w));
+            else if (is_pound) formatted.append(std::format("{:#{}o}", s, w));
+            else formatted.append(std::format("{:{}o}", s, w));
          }
          else if (ext == "hh")
          {
             unsigned char c = va_arg(args, unsigned int);
-            if (fill_with_zero && is_pound)
-               formatted.append(std::format("{:#0{}o}", c, w));
-            else if (fill_with_zero)
-               formatted.append(std::format("{:0{}o}", c, w));
-            else if (is_pound)
-               formatted.append(std::format("{:#{}o}", c, w));
-            else
-               formatted.append(std::format("{:{}o}", c, w));
+            if (fill_with_zero && is_pound) formatted.append(std::format("{:#0{}o}", c, w));
+            else if (fill_with_zero) formatted.append(std::format("{:0{}o}", c, w));
+            else if (is_pound) formatted.append(std::format("{:#{}o}", c, w));
+            else formatted.append(std::format("{:{}o}", c, w));
          }
          else if (ext == "l")
          {
             unsigned long l = va_arg(args, unsigned long);
-            if (fill_with_zero && is_pound)
-               formatted.append(std::format("{:#0{}o}", l, w));
-            else if (fill_with_zero)
-               formatted.append(std::format("{:0{}o}", l, w));
-            else if (is_pound)
-               formatted.append(std::format("{:#{}o}", l, w));
-            else
-               formatted.append(std::format("{:{}o}", l, w));
+            if (fill_with_zero && is_pound) formatted.append(std::format("{:#0{}o}", l, w));
+            else if (fill_with_zero) formatted.append(std::format("{:0{}o}", l, w));
+            else if (is_pound) formatted.append(std::format("{:#{}o}", l, w));
+            else formatted.append(std::format("{:{}o}", l, w));
          }
          else if (ext == "ll")
          {
             unsigned long long ll = va_arg(args, unsigned long long);
-            if (fill_with_zero && is_pound)
-               formatted.append(std::format("{:#0{}o}", ll, w));
-            else if (fill_with_zero)
-               formatted.append(std::format("{:0{}o}", ll, w));
-            else if (is_pound)
-               formatted.append(std::format("{:#{}o}", ll, w));
-            else
-               formatted.append(std::format("{:{}o}", ll, w));
+            if (fill_with_zero && is_pound) formatted.append(std::format("{:#0{}o}", ll, w));
+            else if (fill_with_zero) formatted.append(std::format("{:0{}o}", ll, w));
+            else if (is_pound) formatted.append(std::format("{:#{}o}", ll, w));
+            else formatted.append(std::format("{:{}o}", ll, w));
          }
       }
       else if (type == "b")
@@ -320,62 +238,42 @@ static std::string format_string(const char *format, ...)
          if (ext.empty())
          {
             unsigned int i = va_arg(args, unsigned int);
-            if (fill_with_zero && is_pound)
-               formatted.append(std::format("{:#0{}b}", i, w));
-            else if (fill_with_zero)
-               formatted.append(std::format("{:0{}b}", i, w));
-            else if (is_pound)
-               formatted.append(std::format("{:#{}b}", i, w));
-            else
-               formatted.append(std::format("{:{}b}", i, w));
+            if (fill_with_zero && is_pound) formatted.append(std::format("{:#0{}b}", i, w));
+            else if (fill_with_zero) formatted.append(std::format("{:0{}b}", i, w));
+            else if (is_pound) formatted.append(std::format("{:#{}b}", i, w));
+            else formatted.append(std::format("{:{}b}", i, w));
          }
          else if (ext == "h")
          {
             unsigned short s = va_arg(args, unsigned int);
-            if (fill_with_zero && is_pound)
-               formatted.append(std::format("{:#0{}b}", s, w));
-            else if (fill_with_zero)
-               formatted.append(std::format("{:0{}b}", s, w));
-            else if (is_pound)
-               formatted.append(std::format("{:#{}b}", s, w));
-            else
-               formatted.append(std::format("{:{}b}", s, w));
+            if (fill_with_zero && is_pound) formatted.append(std::format("{:#0{}b}", s, w));
+            else if (fill_with_zero) formatted.append(std::format("{:0{}b}", s, w));
+            else if (is_pound) formatted.append(std::format("{:#{}b}", s, w));
+            else formatted.append(std::format("{:{}b}", s, w));
          }
          else if (ext == "hh")
          {
             unsigned char c = va_arg(args, unsigned int);
-            if (fill_with_zero && is_pound)
-               formatted.append(std::format("{:#0{}b}", c, w));
-            else if (fill_with_zero)
-               formatted.append(std::format("{:0{}b}", c, w));
-            else if (is_pound)
-               formatted.append(std::format("{:#{}b}", c, w));
-            else
-               formatted.append(std::format("{:{}b}", c, w));
+            if (fill_with_zero && is_pound) formatted.append(std::format("{:#0{}b}", c, w));
+            else if (fill_with_zero) formatted.append(std::format("{:0{}b}", c, w));
+            else if (is_pound) formatted.append(std::format("{:#{}b}", c, w));
+            else formatted.append(std::format("{:{}b}", c, w));
          }
          else if (ext == "l")
          {
             unsigned long l = va_arg(args, unsigned long);
-            if (fill_with_zero && is_pound)
-               formatted.append(std::format("{:#0{}b}", l, w));
-            else if (fill_with_zero)
-               formatted.append(std::format("{:0{}b}", l, w));
-            else if (is_pound)
-               formatted.append(std::format("{:#{}b}", l, w));
-            else
-               formatted.append(std::format("{:{}b}", l, w));
+            if (fill_with_zero && is_pound) formatted.append(std::format("{:#0{}b}", l, w));
+            else if (fill_with_zero) formatted.append(std::format("{:0{}b}", l, w));
+            else if (is_pound) formatted.append(std::format("{:#{}b}", l, w));
+            else formatted.append(std::format("{:{}b}", l, w));
          }
          else if (ext == "ll")
          {
             unsigned long long ll = va_arg(args, unsigned long long);
-            if (fill_with_zero && is_pound)
-               formatted.append(std::format("{:#0{}b}", ll, w));
-            else if (fill_with_zero)
-               formatted.append(std::format("{:0{}b}", ll, w));
-            else if (is_pound)
-               formatted.append(std::format("{:#{}b}", ll, w));
-            else
-               formatted.append(std::format("{:{}b}", ll, w));
+            if (fill_with_zero && is_pound) formatted.append(std::format("{:#0{}b}", ll, w));
+            else if (fill_with_zero) formatted.append(std::format("{:0{}b}", ll, w));
+            else if (is_pound) formatted.append(std::format("{:#{}b}", ll, w));
+            else formatted.append(std::format("{:{}b}", ll, w));
          }
       }
       else if (type == "u")
@@ -383,71 +281,49 @@ static std::string format_string(const char *format, ...)
          if (ext.empty())
          {
             unsigned int i = va_arg(args, unsigned int);
-            if (fill_with_zero && is_pound)
-               formatted.append(std::format("{:+0{}d}", i, w));
-            else if (fill_with_zero)
-               formatted.append(std::format("{:0{}d}", i, w));
-            else if (is_pound)
-               formatted.append(std::format("{:+{}d}", i, w));
-            else
-               formatted.append(std::format("{:{}d}", i, w));
+            if (fill_with_zero && is_pound) formatted.append(std::format("{:+0{}d}", i, w));
+            else if (fill_with_zero) formatted.append(std::format("{:0{}d}", i, w));
+            else if (is_pound) formatted.append(std::format("{:+{}d}", i, w));
+            else formatted.append(std::format("{:{}d}", i, w));
          }
          else if (ext == "h")
          {
             unsigned short s = va_arg(args, unsigned int);
-            if (fill_with_zero && is_pound)
-               formatted.append(std::format("{:+0{}d}", s, w));
-            else if (fill_with_zero)
-               formatted.append(std::format("{:0{}d}", s, w));
-            else if (is_pound)
-               formatted.append(std::format("{:+{}d}", s, w));
-            else
-               formatted.append(std::format("{:{}d}", s, w));
+            if (fill_with_zero && is_pound) formatted.append(std::format("{:+0{}d}", s, w));
+            else if (fill_with_zero) formatted.append(std::format("{:0{}d}", s, w));
+            else if (is_pound) formatted.append(std::format("{:+{}d}", s, w));
+            else formatted.append(std::format("{:{}d}", s, w));
          }
          else if (ext == "hh")
          {
             unsigned char c = va_arg(args, unsigned int);
-            if (fill_with_zero && is_pound)
-               formatted.append(std::format("{:+0{}d}", c, w));
-            else if (fill_with_zero)
-               formatted.append(std::format("{:0{}d}", c, w));
-            else if (is_pound)
-               formatted.append(std::format("{:+{}d}", c, w));
-            else
-               formatted.append(std::format("{:{}d}", c, w));
+            if (fill_with_zero && is_pound) formatted.append(std::format("{:+0{}d}", c, w));
+            else if (fill_with_zero) formatted.append(std::format("{:0{}d}", c, w));
+            else if (is_pound) formatted.append(std::format("{:+{}d}", c, w));
+            else formatted.append(std::format("{:{}d}", c, w));
          }
          else if (ext == "l")
          {
             unsigned long l = va_arg(args, unsigned long);
-            if (fill_with_zero && is_pound)
-               formatted.append(std::format("{:+0{}d}", l, w));
-            else if (fill_with_zero)
-               formatted.append(std::format("{:0{}d}", l, w));
-            else if (is_pound)
-               formatted.append(std::format("{:+{}d}", l, w));
-            else
-               formatted.append(std::format("{:{}d}", l, w));
+            if (fill_with_zero && is_pound) formatted.append(std::format("{:+0{}d}", l, w));
+            else if (fill_with_zero) formatted.append(std::format("{:0{}d}", l, w));
+            else if (is_pound) formatted.append(std::format("{:+{}d}", l, w));
+            else formatted.append(std::format("{:{}d}", l, w));
          }
          else if (ext == "ll")
          {
             unsigned long long ll = va_arg(args, unsigned long long);
-            if (fill_with_zero && is_pound)
-               formatted.append(std::format("{:+0{}d}", ll, w));
-            else if (fill_with_zero)
-               formatted.append(std::format("{:0{}d}", ll, w));
-            else if (is_pound)
-               formatted.append(std::format("{:+{}d}", ll, w));
-            else
-               formatted.append(std::format("{:{}d}", ll, w));
+            if (fill_with_zero && is_pound) formatted.append(std::format("{:+0{}d}", ll, w));
+            else if (fill_with_zero) formatted.append(std::format("{:0{}d}", ll, w));
+            else if (is_pound) formatted.append(std::format("{:+{}d}", ll, w));
+            else formatted.append(std::format("{:{}d}", ll, w));
          }
       }
       else if (type == "f" || type == "F")
       {
          double d = va_arg(args, double);
-         if (p == 0)
-            formatted.append(std::format("{:{}f}", d, w));
-         else
-            formatted.append(std::format("{:{}.{}f}", d, w, p));
+         if (p == 0) formatted.append(std::format("{:{}f}", d, w));
+         else formatted.append(std::format("{:{}.{}f}", d, w, p));
       }
       else if (type == "s")
       {
@@ -470,8 +346,7 @@ static std::string format_string(const char *format, ...)
 
    va_end(args);
 
-   if (!suffix.empty())
-      formatted.append(suffix);
+   if (!suffix.empty()) formatted.append(suffix);
 
    return formatted;
 }
@@ -497,8 +372,7 @@ namespace
 
 static std::string base64(bool encode, const char *base, const std::string &input) noexcept
 {
-   if (input.empty())
-      return {};
+   if (input.empty()) return {};
 
    if (encode)
    {
@@ -549,10 +423,8 @@ static std::string base64(bool encode, const char *base, const std::string &inpu
       std::string decoded;
 
       size_t inlen = input.length(), skip = 0;
-      if (inlen % 4)
-         return {};
-      while (input[inlen - 1 - skip] == '=')
-         ++skip;
+      if (inlen % 4) return {};
+      while (input[inlen - 1 - skip] == '=') ++skip;
 
       for (size_t i = 0; i < (inlen - skip) / 4; ++i)
       {
@@ -561,8 +433,7 @@ static std::string base64(bool encode, const char *base, const std::string &inpu
          auto p2 = basepos(input[i * 4 + 2], base);
          auto p3 = basepos(input[i * 4 + 3], base);
 
-         if (p0 == 255 || p1 == 255 || p2 == 255 || p3 == 255)
-            return std::string();
+         if (p0 == 255 || p1 == 255 || p2 == 255 || p3 == 255) return std::string();
 
          unsigned char b1 = (p0 << 2) + ((p1 & 48) >> 4);
          unsigned char b2 = ((p1 & 15) << 4) + ((p2 & 60) >> 2);
@@ -626,10 +497,7 @@ std::string base64encode(const std::string &input) noexcept
 #include <sys/syscall.h>
 
 /* Compression Library Header Files */
-extern "C"
-{
-   #include "zutil.h"
-}
+#include "zutil.h"
 
 // C++ implementation functions header file
 #include "wt_impl.hpp"
@@ -660,12 +528,9 @@ static APR_OPTIONAL_FN_TYPE(ssl_is_https) *proxy_is_https = NULL;
 static int conn_is_https(conn_rec *c, wt_config_t *conf, apr_table_t *headers)
 {
    proxy_is_https = APR_RETRIEVE_OPTIONAL_FN(ssl_is_https);
-   if (proxy_is_https)
-      return proxy_is_https(c);
-   if (conf->ssl_indicator)
-      return apr_table_get(headers, conf->ssl_indicator) != NULL;
-   else
-      return 0;
+   if (proxy_is_https) return proxy_is_https(c);
+   if (conf->ssl_indicator) return apr_table_get(headers, conf->ssl_indicator) != NULL;
+   else return 0;
 }
 
 /* External functions, linked correctly but not declared by header files */
@@ -693,6 +558,7 @@ struct wt_input_filter_cpp
    bool trace_uri;
    apr_size_t content_length_i;
    std::string content_type;
+   bool query_string;
    wt_config_t *conf;
    apr_time_t start_i;
    apr_time_t elapsed;
@@ -1320,7 +1186,7 @@ extern "C" int post_read_request_impl(request_rec *r)
       }
    }
 
-   // print filter values out after all the checks
+   // print filter values out after some checks
    if (APLOG_IS_LEVEL(r->server, APLOG_DEBUG))
    {
       ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "post_read_request(): [%ld] input_filter = %s", tid, to_char(input_filter));
@@ -1377,6 +1243,7 @@ extern "C" int post_read_request_impl(request_rec *r)
          input_filter_ctx->conf = conf;
          input_filter_ctx->content_length_i = std::stoul(content_length);
          input_filter_ctx->content_type.assign(content_type);
+         input_filter_ctx->query_string = input_filter_ctx->content_type == "application/x-www-form-urlencoded" && strcmp(r->method, "POST") == 0;
          input_filter_ctx->start_i = 0;
          input_filter_ctx->elapsed = 0;
          input_filter_ctx->getline = 0;
@@ -1795,27 +1662,70 @@ extern "C" int wt_input_filter_impl(ap_filter_t *f, apr_bucket_brigade *bb, ap_i
             ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_input_filter(): [%ld] total bytes read = %ld", tid, ctx->body.length());
          }
 
-         // *****************************************************************************
-         // Check whether content type is application/x-www-form-urlencoded
-         // If it is so, then add as a request header "*Post" and not as a request body
-         // Warning: remove parameters included in conf->exclude_parameter_table
-         // *****************************************************************************
-
          if (ctx->conf->wt_record_c)
          {
-            // BASE64 encoding
-            apr_time_t start_b64 = apr_time_now();
-            std::string record_b64 = base64encode(ctx->body);
-            if (APLOG_C_IS_LEVEL(f->c, APLOG_DEBUG))
-               ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_input_filter(): [%ld] BASE64 encoding elapsed time = %s",
-                             tid, to_string(apr_time_now() - start_b64).c_str());
+            if (ctx->query_string)
+            {
+               // Add as a query string and not as a request body
+               if (APLOG_C_IS_LEVEL(f->c, APLOG_DEBUG))
+                  ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_input_filter(): [%ld] scan for query string parameters to be removed ...", tid);
 
-            // request body data
-            std::string request_body_data{"**REQUEST_BODY**|" + record_b64};
-            char *data = new char[request_body_data.length() + 1];
-            std::strcpy(data, request_body_data.c_str());
-            request_body_data.clear();
-            apr_table_set(f->r->notes, "request_body_data", data);
+               std::string &scan = ctx->body;
+               for (value_table_t *t = ctx->conf->exclude_parameter_table; t; t = t->next)
+               {
+                  if (APLOG_C_IS_LEVEL(f->c, APLOG_DEBUG))
+                     ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_input_filter(): [%ld] query string parameter = %s", tid, t->value);
+
+                  std::regex parameter_re { std::format(R"(?<!\w){0}=.+?&|{0}&parameter3=[^&]+$)", t->value), std::regex::icase };
+                  std::smatch match;
+
+                  if (std::regex_search(scan, match, parameter_re))
+                  {
+                     if (APLOG_C_IS_LEVEL(f->c, APLOG_DEBUG))
+                     {
+                        ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_input_filter(): [%ld] found %s query string parameter", tid, t->value);
+                        ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_input_filter(): [%ld] %s query string parameter length = %ld", tid, t->value, match.length());
+                     }
+
+                     // remove query string parameter
+                     scan.erase(match.position(), match.length());
+
+                     if (APLOG_C_IS_LEVEL(f->c, APLOG_DEBUG))
+                        ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_output_filter(): [%ld] removed %s query string parameter, new length = %ld", tid, t->value, scan.length());
+                  }
+               }
+
+               if (APLOG_C_IS_LEVEL(f->c, APLOG_DEBUG))
+                  ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_input_filter(): [%ld] scan for query string parameters to be removed done", tid);
+
+               if (!ctx->body.empty())
+               {
+                  // Add the query string as header "*Post"
+                  std::string request_body_data { "*Post: " + ctx->body };
+                  ctx->body.clear();
+                  char *data = new char[request_body_data.length() + 1];
+                  std::strcpy(data, request_body_data.c_str());
+                  request_body_data.clear();
+                  apr_table_set(f->r->notes, "request_body_data", data);
+               }
+            }
+            else
+            {
+               // BASE64 encoding
+               apr_time_t start_b64 = apr_time_now();
+               std::string record_b64 = base64encode(ctx->body);
+               ctx->body.clear();
+               if (APLOG_C_IS_LEVEL(f->c, APLOG_DEBUG))
+                  ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_input_filter(): [%ld] BASE64 encoding elapsed time = %s",
+                              tid, to_string(apr_time_now() - start_b64).c_str());
+
+               // request body data
+               std::string request_body_data { "**REQUEST_BODY**|" + record_b64 };
+               char *data = new char[request_body_data.length() + 1];
+               std::strcpy(data, request_body_data.c_str());
+               request_body_data.clear();
+               apr_table_set(f->r->notes, "request_body_data", data);
+            }
          }
          else
          {
@@ -1938,8 +1848,7 @@ extern "C" int wt_input_filter_impl(ap_filter_t *f, apr_bucket_brigade *bb, ap_i
             ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_input_filter(): [%ld] content_length = %ld", tid, ctx->content_length_i);
          }
 
-         apr_bucket *b = NULL;
-         for (b = APR_BRIGADE_FIRST(bb); b != APR_BRIGADE_SENTINEL(bb); b = APR_BUCKET_NEXT(b))
+         for (apr_bucket *b = APR_BRIGADE_FIRST(bb); b != APR_BRIGADE_SENTINEL(bb); b = APR_BUCKET_NEXT(b))
          {
             if (APR_BUCKET_IS_EOS(b))
             {
@@ -2041,27 +1950,70 @@ extern "C" int wt_input_filter_impl(ap_filter_t *f, apr_bucket_brigade *bb, ap_i
                ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_input_filter(): [%ld] total bytes read = %ld", tid, ctx->body.length());
             }
 
-            // *****************************************************************************
-            // Check whether content type is application/x-www-form-urlencoded
-            // If it is so, then add as a request header "*Post" and not as a request body
-            // Warning: remove parameters included in conf->exclude_parameter_table
-            // *****************************************************************************
-
             if (ctx->conf->wt_record_c)
             {
-               // BASE64 encoding
-               apr_time_t start_b64 = apr_time_now();
-               std::string record_b64 = base64encode(ctx->body);
-               if (APLOG_C_IS_LEVEL(f->c, APLOG_DEBUG))
-                  ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_input_filter(): [%ld] BASE64 encoding elapsed time = %s",
-                                tid, to_string(apr_time_now() - start_b64).c_str());
+               if (ctx->query_string)
+               {
+                  // Add as a query string and not as a request body
+                  if (APLOG_C_IS_LEVEL(f->c, APLOG_DEBUG))
+                     ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_input_filter(): [%ld] scan for query string parameters to be removed ...", tid);
 
-               // request body data
-               std::string request_body_data{"**REQUEST_BODY**|" + record_b64};
-               char *data = new char[request_body_data.length() + 1];
-               std::strcpy(data, request_body_data.c_str());
-               request_body_data.clear();
-               apr_table_set(f->r->notes, "request_body_data", data);
+                  std::string &scan = ctx->body;
+                  for (value_table_t *t = ctx->conf->exclude_parameter_table; t; t = t->next)
+                  {
+                     if (APLOG_C_IS_LEVEL(f->c, APLOG_DEBUG))
+                        ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_input_filter(): [%ld] query string parameter = %s", tid, t->value);
+
+                     std::regex parameter_re { std::format(R"(?<!\w){0}=.+?&|{0}&parameter3=[^&]+$)", t->value), std::regex::icase };
+                     std::smatch match;
+
+                     if (std::regex_search(scan, match, parameter_re))
+                     {
+                        if (APLOG_C_IS_LEVEL(f->c, APLOG_DEBUG))
+                        {
+                           ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_input_filter(): [%ld] found %s query string parameter", tid, t->value);
+                           ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_input_filter(): [%ld] %s query string parameter length = %ld", tid, t->value, match.length());
+                        }
+
+                        // remove query string parameter
+                        scan.erase(match.position(), match.length());
+
+                        if (APLOG_C_IS_LEVEL(f->c, APLOG_DEBUG))
+                           ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_output_filter(): [%ld] removed %s query string parameter, new length = %ld", tid, t->value, scan.length());
+                     }
+                  }
+
+                  if (APLOG_C_IS_LEVEL(f->c, APLOG_DEBUG))
+                     ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_input_filter(): [%ld] scan for query string parameters to be removed done", tid);
+
+                  if (!ctx->body.empty())
+                  {
+                     // Add the query string as header "*Post"
+                     std::string request_body_data { "*Post: " + ctx->body };
+                     ctx->body.clear();
+                     char *data = new char[request_body_data.length() + 1];
+                     std::strcpy(data, request_body_data.c_str());
+                     request_body_data.clear();
+                     apr_table_set(f->r->notes, "request_body_data", data);
+                  }
+               }
+               else
+               {
+                  // BASE64 encoding
+                  apr_time_t start_b64 = apr_time_now();
+                  std::string record_b64 = base64encode(ctx->body);
+                  ctx->body.clear();
+                  if (APLOG_C_IS_LEVEL(f->c, APLOG_DEBUG))
+                     ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_input_filter(): [%ld] BASE64 encoding elapsed time = %s",
+                                 tid, to_string(apr_time_now() - start_b64).c_str());
+
+                  // request body data
+                  std::string request_body_data { "**REQUEST_BODY**|" + record_b64 };
+                  char *data = new char[request_body_data.length() + 1];
+                  std::strcpy(data, request_body_data.c_str());
+                  request_body_data.clear();
+                  apr_table_set(f->r->notes, "request_body_data", data);
+               }
             }
             else
             {
@@ -2309,8 +2261,7 @@ extern "C" int wt_output_filter_impl(ap_filter_t *f, apr_bucket_brigade *bb)
       }
    }
 
-   apr_bucket *b = NULL;
-   for (b = APR_BRIGADE_FIRST(bb); b != APR_BRIGADE_SENTINEL(bb); b = APR_BUCKET_NEXT(b))
+   for (apr_bucket *b = APR_BRIGADE_FIRST(bb); b != APR_BRIGADE_SENTINEL(bb); b = APR_BUCKET_NEXT(b))
    {
       if (APR_BUCKET_IS_EOS(b))
       {
@@ -2440,6 +2391,7 @@ extern "C" int wt_output_filter_impl(ap_filter_t *f, apr_bucket_brigade *bb)
                   // BASE64 encoding
                   apr_time_t start_b64 = apr_time_now();
                   std::string record_b64 = base64encode(ctx->body);
+                  ctx->body.clear();
                   if (APLOG_C_IS_LEVEL(f->c, APLOG_DEBUG))
                      ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_output_filter(): [%ld] BASE64 encoding elapsed time = %s",
                                  tid, to_string(apr_time_now() - start_b64).c_str());
@@ -2564,19 +2516,17 @@ extern "C" int wt_output_filter_impl(ap_filter_t *f, apr_bucket_brigade *bb)
 
             if (ctx->output_header)
             {
-               value_table_t *t;
-               bool headers_found = false;
-               std::string scan { buffer, 0, bytes };
-               
                if (APLOG_C_IS_LEVEL(f->c, APLOG_DEBUG))
                   ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_output_filter(): [%ld] scan for response headers to be removed ...", tid);
                
-               for (t = ctx->conf->output_header_table; t != 0; t = t->next)
+               bool headers_found = false;
+               std::string scan { buffer, 0, bytes };
+               for (value_table_t *t = ctx->conf->output_header_table; t; t = t->next)
                {
                   if (APLOG_C_IS_LEVEL(f->c, APLOG_DEBUG))
                      ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_output_filter(): [%ld] response header = %s", tid, t->value);
                   
-                  std::regex header_re { std::format(R"({}:\s*.+\n)", t->value), std::regex::icase };
+                  std::regex header_re { std::format(R"((?<!\w){}:\s*.+\r?\n)", t->value), std::regex::icase };
                   std::smatch match;
 
                   if (std::regex_search(scan, match, header_re))
@@ -2601,18 +2551,24 @@ extern "C" int wt_output_filter_impl(ap_filter_t *f, apr_bucket_brigade *bb)
                   if (APLOG_C_IS_LEVEL(f->c, APLOG_DEBUG))
                      ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_output_filter(): [%ld] there is the need to modify the current bucket", tid);
                   
+                  // delete current bucket
                   apr_bucket *bt = APR_BUCKET_NEXT(b);
                   apr_bucket_delete(b);
                   b = bt;
-                  apr_bucket *ours = apr_bucket_pool_create(scan.c_str(), scan.length(), f->r->pool, f->c->bucket_alloc);
-                  APR_BUCKET_INSERT_BEFORE(b, ours);
-                  b = ours;
-                  if (APLOG_C_IS_LEVEL(f->c, APLOG_DEBUG))
-                     ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_output_filter(): [%ld] current bucket modified successfully", tid);
+
+                  // add new bucket
+                  if (!scan.empty())
+                  {
+                     apr_bucket *ours = apr_bucket_pool_create(scan.c_str(), scan.length(), f->r->pool, f->c->bucket_alloc);
+                     APR_BUCKET_INSERT_BEFORE(b, ours);
+                     b = ours;
+                     if (APLOG_C_IS_LEVEL(f->c, APLOG_DEBUG))
+                        ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_output_filter(): [%ld] current bucket deleted and new bucket added", tid);
+                  }
                }
 
                if (APLOG_C_IS_LEVEL(f->c, APLOG_DEBUG))
-                  ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_output_filter(): [%ld] search of response headers to be removed done", tid);
+                  ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c, "wt_output_filter(): [%ld] scan for response headers to be removed done", tid);
             }
 
             if (!ctx->output_filter && ctx->output_header)

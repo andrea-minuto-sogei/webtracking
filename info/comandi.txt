@@ -65,6 +65,7 @@ comandi:
 ## Visual Studio Code
 - Visual Studio Code: https://code.visualstudio.com/docs/?dv=linux64_rpm
 - C/C++ Extension Pack (https://marketplace.visualstudio.com/items?itemName=ms-vscode.cpptools-extension-pack)
+- vscode-icons (https://marketplace.visualstudio.com/items?itemName=vscode-icons-team.vscode-icons)
 - Eclipse Keymap (https://marketplace.visualstudio.com/items?itemName=alphabotsec.vscode-eclipse-keybindings)
 
 Comandi:
