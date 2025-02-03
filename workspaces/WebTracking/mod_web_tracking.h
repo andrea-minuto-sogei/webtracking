@@ -88,7 +88,7 @@ struct wt_config_s
    const char *record_archive_folder;
    unsigned int record_minutes;
    apr_anylock_t record_thread_mutex;
-   wt_record *wt_record_c;
+   unsigned short log_enabled; /* 0 = log disabled by error, 1 = log enabled */
 
    apr_uint32_t t_request;
    apr_uint32_t t_response;

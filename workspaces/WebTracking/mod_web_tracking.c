@@ -2,10 +2,11 @@
 
 /*
  * VERSION       DATE        DESCRIPTION
- * 2025.1.31.1  2025-01-31   Implement request/responce cycle functions using C++23
+ * 2025.2.3.1  2025-02-03    Implement request/responce cycle functions using C++23
  *                           Implement record file management in C++23
  *                           Change tracking data record format and contents
  *                           Add styling to server status hook
+ *                           Implement hot debug for specific resources
  *                           Remove directive WebTrackingPrintWASUser
  *                           Remove directive WebTrackingPrintRequestHeader
  *                           Move to GNU Compiler Collection 14.2.1
@@ -146,7 +147,7 @@ module AP_MODULE_DECLARE_DATA web_tracking_module;
 APLOG_USE_MODULE(web_tracking);
 
 // version
-const char *version = "Web Tracking Apache Module 2025.1.30.1 (C17/C++23)";
+const char *version = "Web Tracking Apache Module 2025.2.3.1 (C17/C++23)";
 
 wt_counter_t *wt_counter = 0;
 static apr_shm_t *shm_counter = 0;
@@ -164,7 +165,7 @@ static void *create_server_config(apr_pool_t *p, server_rec *s)
    conf->record_folder = NULL;
    conf->record_archive_folder = NULL;
    conf->record_minutes = 0;
-   conf->wt_record_c = NULL;
+   conf->log_enabled = 0;
 
    conf->uri_table = conf->exclude_ip_table = conf->exclude_uri_table = conf->exclude_uri_body_table = conf->exclude_uri_post_table = conf->trace_uri_table = 0;
    conf->host_table = conf->content_table = 0;
@@ -811,10 +812,10 @@ static apr_status_t child_exit(void *data)
    if (rtl == APR_SUCCESS)
    {
       // release wt_record instance
-      if (conf->wt_record_c)
+      if (conf->log_enabled)
       {
-            wt_record_release(conf->wt_record_c);
-            conf->wt_record_c = NULL;
+            wt_record_release();
+            conf->log_enabled = 0;
       }
 
       // release thread mutex
@@ -867,7 +868,7 @@ static void child_init(apr_pool_t *pchild, server_rec *s)
    }
 
    // wt_record
-   conf->wt_record_c = wt_record_allocate(conf->record_folder, conf->record_archive_folder, conf->record_minutes);
+   conf->log_enabled = wt_record_init(conf->record_folder, conf->record_archive_folder, conf->record_minutes);
 
    // cleanup
    apr_pool_cleanup_register(pchild, s, child_exit, apr_pool_cleanup_null);
