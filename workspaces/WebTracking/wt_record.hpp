@@ -14,7 +14,7 @@ void wt_record_release();
 }
 
 bool wt_record_write(const std::string &text);
-bool is_debug_enabled(const std::string &uri);
+bool is_debug_enabled(const std::string &hostname, const std::string &uri);
 
 #endif
 

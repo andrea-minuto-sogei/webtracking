@@ -23,9 +23,9 @@ class wt_record
 {
    public:
       // class interface variables
-      static std::string folder;
-      static std::string archive_folder;
-      static unsigned int minutes;
+      inline static std::string folder;
+      inline static std::string archive_folder;
+      inline static unsigned int minutes;
 
       // class implementation variable
       inline static unsigned long sequence { 0 };
@@ -50,7 +50,7 @@ namespace
    wt_record record;
    std::unordered_set<std::string> debug_uris;
    std::shared_mutex debug_mutex;
-   std::atomic_bool active{false};
+   bool active { false };
 }
 
 std::string trim(const std::string &str)
@@ -66,16 +66,16 @@ std::string trim(const std::string &str)
 
 void manage_debug_file()
 {
-   unsigned short seconds { 0 };
+   unsigned short seconds { 60 };
 
-   while (active.load())
+   while (active)
    {
       if (++seconds < 60)
       {
          std::this_thread::sleep_for(std::chrono::seconds { 1 });
          continue;
       }
-      
+
       std::unordered_set<std::string> temp;
 
       if (std::filesystem::exists("~/.webtracking_debug_uris") && 
@@ -105,17 +105,18 @@ void manage_debug_file()
    }
 }
 
-bool is_debug_enabled(const std::string &uri)
+bool is_debug_enabled(const std::string &hostname, const std::string &uri)
 {
-    std::shared_lock lock { debug_mutex };
-    return std::ranges::any_of(debug_uris, [&uri](const std::string &debug_uri) { return uri.starts_with(debug_uri); });
+   std::string url = std::format("https://{}{}", hostname, uri);
+   std::shared_lock lock { debug_mutex };
+   return std::ranges::any_of(debug_uris, [&url](const std::string &debug_uri) { return url.starts_with(debug_uri); });
 }
 
 // private release function
 void wt_record_release_internal(wt_record &record)
 {
    // nothing to release
-   if (record.out) return;
+   if (!record.out) return;
 
    // no active file
    if (!record.out.is_open()) return;
@@ -154,10 +155,11 @@ unsigned short wt_record_init(const char *folder, const char *archive_folder, un
    wt_record::minutes = (minutes >= 5 && minutes <= 120) ? minutes : 30;
 
    // active manage debug file thread
-   active.store(true);
-   auto handle = std::async(std::launch::async, manage_debug_file);
+   active = true;
+   std::thread t = std::thread(manage_debug_file);
+   t.detach();
 
-   return 1 /* OK */;
+   return 1; /* OK */
 }
 
 bool wt_record_write(const std::string &text)
@@ -216,6 +218,6 @@ bool wt_record_write(const std::string &text)
 extern "C"
 void wt_record_release()
 {
-   active.store(false);
+   active = false;
    wt_record_release_internal(record);
 }

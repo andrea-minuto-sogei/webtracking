@@ -2,7 +2,7 @@
 
 /*
  * VERSION       DATE        DESCRIPTION
- * 2025.2.3.1  2025-02-03    Implement request/responce cycle functions using C++23
+ * 2025.2.4.1  2025-02-04    Implement request/responce cycle functions using C++23
  *                           Implement record file management in C++23
  *                           Change tracking data record format and contents
  *                           Add styling to server status hook
@@ -147,7 +147,7 @@ module AP_MODULE_DECLARE_DATA web_tracking_module;
 APLOG_USE_MODULE(web_tracking);
 
 // version
-const char *version = "Web Tracking Apache Module 2025.2.3.1 (C17/C++23)";
+const char *version = "Web Tracking Apache Module 2025.2.4.1 (C17/C++23)";
 
 wt_counter_t *wt_counter = 0;
 static apr_shm_t *shm_counter = 0;
@@ -800,10 +800,11 @@ static apr_status_t child_exit(void *data)
    server_rec *s = data;
    pid_t pid = getpid();
 
-   if(APLOG_IS_LEVEL(s, APLOG_ALERT)) ap_log_error(APLOG_MARK, APLOG_ALERT, 0, s, "web_tracking_module: starting child cleanup routine [%d]", pid);
+   if (APLOG_IS_LEVEL(s, APLOG_ALERT))
+      ap_log_error(APLOG_MARK, APLOG_ALERT, 0, s, "web_tracking_module: starting child cleanup routine [%d]", pid);
 
-   if(APLOG_IS_LEVEL(s, APLOG_DEBUG)) ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, s, "child_exit(): [%d] start", pid);
-      
+   if (APLOG_IS_LEVEL(s, APLOG_DEBUG)) 
+      ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, s, "child_exit(): [%d] start", pid);
 
    // retrieve config instance
    wt_config_t *conf = ap_get_module_config(s->module_config, &web_tracking_module);
@@ -814,8 +815,11 @@ static apr_status_t child_exit(void *data)
       // release wt_record instance
       if (conf->log_enabled)
       {
-            wt_record_release();
-            conf->log_enabled = 0;
+         if (APLOG_IS_LEVEL(s, APLOG_DEBUG)) 
+            ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, s, "child_exit(): [%d] launch wt_record_release() to move current record file", pid);
+            
+         wt_record_release();
+         conf->log_enabled = 0;
       }
 
       // release thread mutex
@@ -824,21 +828,22 @@ static apr_status_t child_exit(void *data)
          apr_thread_mutex_destroy(conf->record_thread_mutex.lock.tm);
          conf->record_thread_mutex.lock.tm = NULL;
          
-         if(APLOG_IS_LEVEL(s, APLOG_DEBUG)) ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, s, "child_exit(): [%d] Record thread mutex released", pid);
+         if (APLOG_IS_LEVEL(s, APLOG_DEBUG)) ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, s, "child_exit(): [%d] Record thread mutex released", pid);
       }
       
-      if(APLOG_IS_LEVEL(s, APLOG_ALERT)) ap_log_error(APLOG_MARK, APLOG_ALERT, 0, s, "web_tracking_module: terminated child cleanup routine [%d]", pid);
+      if (APLOG_IS_LEVEL(s, APLOG_ALERT)) ap_log_error(APLOG_MARK, APLOG_ALERT, 0, s, "web_tracking_module: terminated child cleanup routine [%d]", pid);
    }
    else
    {
       char error[1024];
       apr_strerror(rtl, error, 1024);
       
-      if(APLOG_IS_LEVEL(s, APLOG_ALERT)) ap_log_error(APLOG_MARK, APLOG_ALERT, 0, s, "web_tracking_module: child cleanup routine failed to acquire a cross-thread lock (err: %s) [%d]", error, pid);
+      if (APLOG_IS_LEVEL(s, APLOG_ALERT))
+         ap_log_error(APLOG_MARK, APLOG_ALERT, 0, s, "web_tracking_module: child cleanup routine failed to acquire a cross-thread lock (err: %s) [%d]", error, pid);
    }
 
    
-   if(APLOG_IS_LEVEL(s, APLOG_DEBUG)) ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, s, "child_exit(): [%d] end", pid);
+   if (APLOG_IS_LEVEL(s, APLOG_DEBUG)) ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, s, "child_exit(): [%d] end", pid);
 
    return APR_SUCCESS;
 }
@@ -855,14 +860,11 @@ static void child_init(apr_pool_t *pchild, server_rec *s)
    apr_status_t mtc = apr_thread_mutex_create(&conf->record_thread_mutex.lock.tm, APR_THREAD_MUTEX_DEFAULT, pchild);
    if (mtc == APR_SUCCESS)
    {
-      
-      if(APLOG_IS_LEVEL(s, APLOG_INFO)) ap_log_error(APLOG_MARK, APLOG_INFO, 0, s, "[%d] Record thread mutex successfully initialized", pid);
- 
+      if (APLOG_IS_LEVEL(s, APLOG_INFO)) ap_log_error(APLOG_MARK, APLOG_INFO, 0, s, "[%d] Record thread mutex successfully initialized", pid);
    }
    else
    {
-      
-      if(APLOG_IS_LEVEL(s, APLOG_ALERT)) ap_log_error(APLOG_MARK, APLOG_ALERT, 0, s, "[%d] Record thread mutex NOT initialized (error %d)", pid, mtc);
+      if (APLOG_IS_LEVEL(s, APLOG_ALERT)) ap_log_error(APLOG_MARK, APLOG_ALERT, 0, s, "[%d] Record thread mutex NOT initialized (error %d)", pid, mtc);
 
       conf->record_thread_mutex.type = apr_anylock_none;
    }
@@ -873,7 +875,7 @@ static void child_init(apr_pool_t *pchild, server_rec *s)
    // cleanup
    apr_pool_cleanup_register(pchild, s, child_exit, apr_pool_cleanup_null);
    
-      if(APLOG_IS_LEVEL(s, APLOG_DEBUG)) ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, s, "child_init(): [%d] child initialized", pid);
+   if (APLOG_IS_LEVEL(s, APLOG_DEBUG)) ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, s, "child_init(): [%d] child initialized", pid);
 }
 
 static int post_config(apr_pool_t *pconf, apr_pool_t *plog, apr_pool_t *ptemp, server_rec *s)
@@ -884,15 +886,15 @@ static int post_config(apr_pool_t *pconf, apr_pool_t *plog, apr_pool_t *ptemp, s
 
    if (pconf)
    {
-      if(APLOG_IS_LEVEL(s, APLOG_DEBUG))
+      if (APLOG_IS_LEVEL(s, APLOG_DEBUG))
       {  
          ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, s, "post_config(): [%d] start", pid);
          ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, s, "post_config(): [%d] is_main_process = %d", pid, is_main_process);
       }
    }
 
-   if (is_main_process) 
-      if(APLOG_IS_LEVEL(s, APLOG_INFO)) ap_log_error(APLOG_MARK, APLOG_INFO, 0, s, version);
+   if (is_main_process && APLOG_IS_LEVEL(s, APLOG_INFO))
+      ap_log_error(APLOG_MARK, APLOG_INFO, 0, s, version);
 
    wt_config_t *conf = ap_get_module_config(s->module_config, &web_tracking_module);
 
@@ -916,7 +918,8 @@ static int post_config(apr_pool_t *pconf, apr_pool_t *plog, apr_pool_t *ptemp, s
 
          apr_pool_cleanup_register(pconf, NULL, wt_shm_cleanup, apr_pool_cleanup_null);
   
-         if(APLOG_IS_LEVEL(s, APLOG_DEBUG)) ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, s, "post_config(): [%d] successfully created or attached shared memory %s", pid, shm_filename);
+         if (APLOG_IS_LEVEL(s, APLOG_DEBUG))
+            ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, s, "post_config(): [%d] successfully created or attached shared memory %s", pid, shm_filename);
         
       }
       else
@@ -924,33 +927,35 @@ static int post_config(apr_pool_t *pconf, apr_pool_t *plog, apr_pool_t *ptemp, s
          wt_counter = 0;
          shm_counter = 0;
          
-         if(APLOG_IS_LEVEL(s, APLOG_DEBUG)) ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, s, "post_config(): [%d] failed creation of shared memory %s", pid, shm_filename);
+         if (APLOG_IS_LEVEL(s, APLOG_DEBUG))
+            ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, s, "post_config(): [%d] failed creation of shared memory %s", pid, shm_filename);
       }
 
       // Print out configuration settings
-      if(APLOG_IS_LEVEL(s, APLOG_INFO))
+      if (APLOG_IS_LEVEL(s, APLOG_INFO))
       { 
          ap_log_error(APLOG_MARK, APLOG_INFO, 0, s, "web_tracking_module: [%d] id = %s", pid, conf->id);
          ap_log_error(APLOG_MARK, APLOG_INFO, 0, s, "web_tracking_module: [%d] uuid header = %s", pid, (conf->uuid_header != NULL ? conf->uuid_header : "NULL"));
-         ap_log_error(APLOG_MARK, APLOG_INFO, 0, s, "web_tracking_module: [%d] disable = %d", pid, conf->disable);
-         ap_log_error(APLOG_MARK, APLOG_INFO, 0, s, "web_tracking_module: [%d] http = %d", pid, conf->http);
-         ap_log_error(APLOG_MARK, APLOG_INFO, 0, s, "web_tracking_module: [%d] https = %d", pid, conf->https);
-         ap_log_error(APLOG_MARK, APLOG_INFO, 0, s, "web_tracking_module: [%d] inflate_response = %d", pid, conf->inflate_response);
-         ap_log_error(APLOG_MARK, APLOG_INFO, 0, s, "web_tracking_module: [%d] enable_proxy = %d", pid, conf->proxy);
+         ap_log_error(APLOG_MARK, APLOG_INFO, 0, s, "web_tracking_module: [%d] disable = %s", pid, (conf->disable == 1 ? "On" : "Off"));
+         ap_log_error(APLOG_MARK, APLOG_INFO, 0, s, "web_tracking_module: [%d] http = %s", pid, (conf->http == 1 ? "On" : "Off"));
+         ap_log_error(APLOG_MARK, APLOG_INFO, 0, s, "web_tracking_module: [%d] https = %s", pid, (conf->https == 1 ? "On" : "Off"));
+         ap_log_error(APLOG_MARK, APLOG_INFO, 0, s, "web_tracking_module: [%d] inflate_response = %s", pid, (conf->inflate_response == 1 ? "On" : "Off"));
+         ap_log_error(APLOG_MARK, APLOG_INFO, 0, s, "web_tracking_module: [%d] enable_proxy = %s", pid, (conf->proxy == 1 ? "On" : "Off"));
          ap_log_error(APLOG_MARK, APLOG_INFO, 0, s, "web_tracking_module: [%d] body_limit = %d MB", pid, conf->body_limit);
-         ap_log_error(APLOG_MARK, APLOG_INFO, 0, s, "web_tracking_module: [%d] enable_post_body = %d", pid, conf->enable_post_body);
+         ap_log_error(APLOG_MARK, APLOG_INFO, 0, s, "web_tracking_module: [%d] enable_post_body = %s", pid, (conf->enable_post_body == 1 ? "On" : "Off"));
       }
-      if (conf->record_folder != NULL)
-         if(APLOG_IS_LEVEL(s, APLOG_INFO)) ap_log_error(APLOG_MARK, APLOG_INFO, 0, s, "web_tracking_module: [%d] record_folder = %s", pid, conf->record_folder);
 
-      if (conf->record_archive_folder != NULL)
-         if(APLOG_IS_LEVEL(s, APLOG_INFO)) ap_log_error(APLOG_MARK, APLOG_INFO, 0, s, "web_tracking_module: [%d] record_archive_folder = %s", pid, conf->record_archive_folder);
+      if (conf->record_folder != NULL && APLOG_IS_LEVEL(s, APLOG_INFO))
+         ap_log_error(APLOG_MARK, APLOG_INFO, 0, s, "web_tracking_module: [%d] record_folder = %s", pid, conf->record_folder);
 
-      if (conf->record_minutes > 0) 
-         if(APLOG_IS_LEVEL(s, APLOG_INFO)) ap_log_error(APLOG_MARK, APLOG_INFO, 0, s, "web_tracking_module: [%d] record_life_time = %d minutes", pid, conf->record_minutes);
+      if (conf->record_archive_folder != NULL && APLOG_IS_LEVEL(s, APLOG_INFO))
+         ap_log_error(APLOG_MARK, APLOG_INFO, 0, s, "web_tracking_module: [%d] record_archive_folder = %s", pid, conf->record_archive_folder);
 
-      if (conf->ssl_indicator) 
-         if(APLOG_IS_LEVEL(s, APLOG_INFO)) ap_log_error(APLOG_MARK, APLOG_INFO, 0, s, "web_tracking_module: [%d] ssl_indicator = %s", pid, conf->ssl_indicator);
+      if (conf->record_minutes > 0 && APLOG_IS_LEVEL(s, APLOG_INFO))
+         ap_log_error(APLOG_MARK, APLOG_INFO, 0, s, "web_tracking_module: [%d] record_life_time = %d minutes", pid, conf->record_minutes);
+
+      if (conf->ssl_indicator && APLOG_IS_LEVEL(s, APLOG_INFO))
+         ap_log_error(APLOG_MARK, APLOG_INFO, 0, s, "web_tracking_module: [%d] ssl_indicator = %s", pid, conf->ssl_indicator);
       
       print_regex_table(s, conf->host_table, apr_psprintf(ptemp, "web_tracking_module: [%d] Host", pid));
       print_regex_table(s, conf->uri_table, apr_psprintf(ptemp, "web_tracking_module: [%d] URI", pid));
@@ -968,14 +973,15 @@ static int post_config(apr_pool_t *pconf, apr_pool_t *plog, apr_pool_t *ptemp, s
       print_value_table(s, conf->exclude_parameter_table, apr_psprintf(ptemp, "web_tracking_module: [%d] exclude form parameter", pid));
       print_value_table(s, conf->envvar_table, apr_psprintf(ptemp, "web_tracking_module: [%d] print environment variable", pid));
       print_value_table(s, conf->request_header_table, apr_psprintf(ptemp, "web_tracking_module: [%d] print request header", pid));
-      if (APLOG_IS_LEVEL(s, APLOG_INFO) && conf->appid_header) ap_log_error(APLOG_MARK, APLOG_INFO, 0, s, "web_tracking_module: [%d] application id from response header = %s", pid, conf->appid_header);
+      if (APLOG_IS_LEVEL(s, APLOG_INFO) && conf->appid_header)
+         ap_log_error(APLOG_MARK, APLOG_INFO, 0, s, "web_tracking_module: [%d] application id from response header = %s", pid, conf->appid_header);
       print_uri_table(s, conf->appid_table, apr_psprintf(ptemp, "web_tracking_module: [%d] application id", pid));      
    }
 
    if (conf->disable == 1)
    {
-      if (pconf)
-         if(APLOG_IS_LEVEL(s, APLOG_WARNING))ap_log_error(APLOG_MARK, APLOG_WARNING, 0, s, "WARNING: Web Tracking Apache Module: The web tracking is disabled for all the requests (WebTrackingDisable = On)");
+      if (pconf && APLOG_IS_LEVEL(s, APLOG_WARNING))
+         ap_log_error(APLOG_MARK, APLOG_WARNING, 0, s, "WARNING: Web Tracking Apache Module: The web tracking is disabled for all the requests (WebTrackingDisable = On)");
 
       printf("WARNING: Web Tracking Apache Module: The web tracking is disabled for all the requests (WebTrackingDisable = On)\n");
    }
@@ -984,30 +990,30 @@ static int post_config(apr_pool_t *pconf, apr_pool_t *plog, apr_pool_t *ptemp, s
    {
       if (conf->host_table == 0)
       {
-         if (pconf)
-            if(APLOG_IS_LEVEL(s, APLOG_WARNING)) ap_log_error(APLOG_MARK, APLOG_WARNING, 0, s, "WARNING: Web Tracking Apache Module: Not found any directive WebTrackingHost, so the tracking is disabled for all the requests");
+         if (pconf && APLOG_IS_LEVEL(s, APLOG_WARNING))
+            ap_log_error(APLOG_MARK, APLOG_WARNING, 0, s, "WARNING: Web Tracking Apache Module: Not found any directive WebTrackingHost, so the tracking is disabled for all the requests");
 
          printf("WARNING: Web Tracking Apache Module: Not found any directive WebTrackingHost, so the tracking is disabled for all the requests\n");
       }
 
       if (conf->uri_table == 0)
       {
-         if (pconf) 
-            if(APLOG_IS_LEVEL(s, APLOG_WARNING)) ap_log_error(APLOG_MARK, APLOG_WARNING, 0, s, "WARNING: Web Tracking Apache Module: Not found any directive WebTrackingURI, so the tracking is disabled for all the requests");
+         if (pconf && APLOG_IS_LEVEL(s, APLOG_WARNING))
+            ap_log_error(APLOG_MARK, APLOG_WARNING, 0, s, "WARNING: Web Tracking Apache Module: Not found any directive WebTrackingURI, so the tracking is disabled for all the requests");
 
          printf("WARNING: Web Tracking Apache Module: Not found any directive WebTrackingURI, so the tracking is disabled for all the requests\n");
       }
 
       if (conf->http == 0 && conf->https == 0)
       {
-         if (pconf) 
-            if(APLOG_IS_LEVEL(s, APLOG_WARNING)) ap_log_error(APLOG_MARK, APLOG_WARNING, 0, s, "WARNING: Web Tracking Apache Module: Both the directives WebTrackingHttpEnabled and WebTrackingHttpsEnabled are set to Off, so the tracking is disabled for all the requests");
+         if (pconf && APLOG_IS_LEVEL(s, APLOG_WARNING))
+            ap_log_error(APLOG_MARK, APLOG_WARNING, 0, s, "WARNING: Web Tracking Apache Module: Both the directives WebTrackingHttpEnabled and WebTrackingHttpsEnabled are set to Off, so the tracking is disabled for all the requests");
 
          printf("WARNING: Web Tracking Apache Module: Both the directives WebTrackingHttpEnabled and WebTrackingHttpsEnabled are set to Off, so the tracking is disabled for all the requests\n");
       }
 
-      if (is_main_process) 
-         if(APLOG_IS_LEVEL(s, APLOG_INFO)) ap_log_error(APLOG_MARK, APLOG_INFO, 0, s, "WebTrackingID = %s (%s)", conf->id, (conf->id == conf->alt_id ? "generated by web tracking module" : "defined by user"));
+      if (is_main_process && APLOG_IS_LEVEL(s, APLOG_INFO))
+         ap_log_error(APLOG_MARK, APLOG_INFO, 0, s, "WebTrackingID = %s (%s)", conf->id, (conf->id == conf->alt_id ? "generated by web tracking module" : "defined by user"));
 
    }
 
@@ -1018,8 +1024,7 @@ static int post_config(apr_pool_t *pconf, apr_pool_t *plog, apr_pool_t *ptemp, s
       printf("WebTrackingID = %s (%s)\n", conf->id, (conf->id == conf->alt_id ? "generated by web tracking module" : "defined by user"));
    }
 
-   if (pconf) 
-      if(APLOG_IS_LEVEL(s, APLOG_DEBUG)) ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, s, "post_config(): [%d] end (OK)", pid);
+   if (pconf && APLOG_IS_LEVEL(s, APLOG_DEBUG)) ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, s, "post_config(): [%d] end (OK)", pid);
 
    return OK;
 }

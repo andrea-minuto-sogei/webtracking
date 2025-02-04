@@ -631,8 +631,7 @@ extern "C" int log_headers_cpp(void *rec, const char *key, const char *value)
 
    if (record->conf->header_table)
    {
-      value_table_t *scan;
-      for (scan = record->conf->header_table; scan; scan = scan->next)
+      for (value_table_t *scan = record->conf->header_table; scan; scan = scan->next)
       {
          if (!strcasecmp(key, scan->value)) return 1;
       }
@@ -640,8 +639,7 @@ extern "C" int log_headers_cpp(void *rec, const char *key, const char *value)
 
    if (record->conf->header_value_table)
    {
-      value_table_t *scan;
-      for (scan = record->conf->header_value_table; scan; scan = scan->next)
+      for (value_table_t *scan = record->conf->header_value_table; scan; scan = scan->next)
       {
          if (!strcasecmp(key, scan->value))
          {
@@ -693,8 +691,7 @@ extern "C" int log_headers_cpp(void *rec, const char *key, const char *value)
          {
             const std::string &name1 = spec.str(1);
 
-            value_table_t *scan;
-            for (scan = record->conf->exclude_cookie_table; scan; scan = scan->next)
+            for (value_table_t *scan = record->conf->exclude_cookie_table; scan; scan = scan->next)
             {
               if (name1 == scan->value) return 1;
             }
@@ -720,8 +717,7 @@ extern "C" int log_envvars_cpp(void *rec, const char *key, const char *value)
 
    if (record->conf->envvar_table)
    {
-      value_table_t *scan;
-      for (scan = record->conf->envvar_table; scan; scan = scan->next)
+      for (value_table_t *scan = record->conf->envvar_table; scan; scan = scan->next)
       {
          if (!strcasecmp(key, scan->value))
          {
@@ -738,13 +734,20 @@ extern "C" int post_read_request_impl(request_rec *r)
 {
    pthread_t tid = syscall(SYS_gettid);
 
-   auto level = is_debug_enabled(r->uri) ? APLOG_INFO : APLOG_DEBUG;
+   // get host
+   const char *host = apr_table_get(r->headers_in, "Host");
+   if (!host) host = r->hostname;
+
+   auto level = is_debug_enabled(host, r->uri) ? APLOG_INFO : APLOG_DEBUG;
 
    if (APLOG_IS_LEVEL(r->server, level))
    {
       ap_log_error(APLOG_MARK, level, 0, r->server, "post_read_request(): [%ld] start", tid);
-      ap_log_error(APLOG_MARK, level, 0, r->server, "post_read_request(): [%ld] URI = %s", tid, r->uri);
       ap_log_error(APLOG_MARK, level, 0, r->server, "post_read_request(): [%ld] Method = %s", tid, r->method);
+      ap_log_error(APLOG_MARK, level, 0, r->server, "post_read_request(): [%ld] Host = %s", tid, host);
+      ap_log_error(APLOG_MARK, level, 0, r->server, "post_read_request(): [%ld] URI = %s", tid, r->uri);
+      ap_log_error(APLOG_MARK, level, 0, r->server, "post_read_request(): [%ld] Protocol = %s", tid, r->protocol);
+      
    }
 
    // start timestamp
@@ -796,11 +799,34 @@ extern "C" int post_read_request_impl(request_rec *r)
       trace_uri = true;
    }
 
-   // get host
-   const char *host = apr_table_get(r->headers_in, "Host");
-   if (!host) host = r->hostname;
-   if (APLOG_IS_LEVEL(r->server, level))
-      ap_log_error(APLOG_MARK, level, 0, r->server, "post_read_request(): [%ld] Host = %s", tid, host);
+   // check whether we got a disabling header
+   if (conf->header_off_table != 0)
+   {
+      for (value_table_t *t = conf->header_off_table; t != 0; t = t->next)
+      {
+         if (apr_table_get(r->headers_in, t->value))
+         {
+            if (APLOG_IS_LEVEL(r->server, level))
+               ap_log_error(APLOG_MARK, level, 0, r->server, "post_read_request(): [%ld] found %s disabling header", tid, t->value);
+
+            if (!trace_uri)
+            {
+               if (APLOG_IS_LEVEL(r->server, level))
+               {
+                  std::string elapsed{to_string(apr_time_now() - start)};
+                  ap_log_error(APLOG_MARK, level, 0, r->server, "post_read_request(): [%ld] end (OK) - %s", tid, elapsed.c_str());
+               }
+
+               return OK;
+            }
+            else
+            {
+               if (APLOG_IS_LEVEL(r->server, level))
+                  ap_log_error(APLOG_MARK, level, 0, r->server, "post_read_request(): [%ld] forced to continue cause at least a trace uri matched (%s)", tid, trace_uri_matched);
+            }
+         }
+      }
+   }
 
    // either get or build an uuid
    if (APLOG_IS_LEVEL(r->server, level))
@@ -960,36 +986,6 @@ extern "C" int post_read_request_impl(request_rec *r)
       }
    }
 
-   // check whether we got a disabling header
-   if (conf->header_off_table != 0)
-   {
-      value_table_t *t;
-      for (t = conf->header_off_table; t != 0; t = t->next)
-      {
-         if (apr_table_get(r->headers_in, t->value))
-         {
-            if (APLOG_IS_LEVEL(r->server, level))
-               ap_log_error(APLOG_MARK, level, 0, r->server, "post_read_request(): [%ld] found %s disabling header", tid, t->value);
-
-            if (!trace_uri)
-            {
-               if (APLOG_IS_LEVEL(r->server, level))
-               {
-                  std::string elapsed{to_string(apr_time_now() - start)};
-                  ap_log_error(APLOG_MARK, level, 0, r->server, "post_read_request(): [%ld] end (OK) - %s", tid, elapsed.c_str());
-               }
-
-               return OK;
-            }
-            else
-            {
-               if (APLOG_IS_LEVEL(r->server, level))
-                  ap_log_error(APLOG_MARK, level, 0, r->server, "post_read_request(): [%ld] forced to continue cause at least a trace uri matched (%s)", tid, trace_uri_matched);
-            }
-         }
-      }
-   }
-
    // get remote ip
    const char *remote_ip = r->useragent_ip;
    if (APLOG_IS_LEVEL(r->server, level))
@@ -1090,7 +1086,7 @@ extern "C" int post_read_request_impl(request_rec *r)
    if (conf->envvar_table) apr_table_do(log_envvars_cpp, &record, r->subprocess_env, NULL);
 
    // append uuid to the request headers
-   apr_table_setn(r->headers_in, conf->uuid_header, apr_pstrdup(r->pool, uuid));
+   apr_table_set(r->headers_in, conf->uuid_header, uuid);
 
    // print out request data
    if (APLOG_IS_LEVEL(r->server, level))
@@ -1116,7 +1112,16 @@ extern "C" int post_read_request_impl(request_rec *r)
    // assess whether there is the need to enable a filter and prepare either one or both or none
    bool input_filter = strcmp(r->method, "GET") != 0 && strcmp(r->method, "DELETE") != 0;
    bool output_filter = true;
-   bool output_header = !conf->output_header_table;
+   bool output_header = !!conf->output_header_table;
+
+   // print filter values out before checks
+   if (APLOG_IS_LEVEL(r->server, level))
+   {
+      ap_log_error(APLOG_MARK, level, 0, r->server, "post_read_request(): [%ld] before checks", tid);
+      ap_log_error(APLOG_MARK, level, 0, r->server, "post_read_request(): [%ld] input_filter = %s", tid, to_char(input_filter));
+      ap_log_error(APLOG_MARK, level, 0, r->server, "post_read_request(): [%ld] output_filter = %s", tid, to_char(output_filter));
+      ap_log_error(APLOG_MARK, level, 0, r->server, "post_read_request(): [%ld] output_header = %s", tid, to_char(output_header));
+   }
 
    // check whether we got an uri with excluded body
    const char *exclude_uri_body_matched = search_regex_table(r->uri, conf->exclude_uri_body_table);
@@ -1139,17 +1144,17 @@ extern "C" int post_read_request_impl(request_rec *r)
    }
 
    // check whether we got a POST uri with excluded body
-   if (strcmp(r->method, "POST") == 0)
+   if (input_filter && strcmp(r->method, "POST") == 0)
    {
       const char *exclude_uri_post_matched = search_regex_table(r->uri, conf->exclude_uri_post_table);
-      if (exclude_uri_body_matched)
+      if (exclude_uri_post_matched)
       {
          if (APLOG_IS_LEVEL(r->server, level))
             ap_log_error(APLOG_MARK, level, 0, r->server, "post_read_request(): [%ld] matched Exclude URI Post = %s", tid, exclude_uri_post_matched);
 
          if (!trace_uri)
          {
-            input_filter = output_filter = false;
+            input_filter = false;
             if (APLOG_IS_LEVEL(r->server, level))
                ap_log_error(APLOG_MARK, level, 0, r->server, "post_read_request(): [%ld] the body tracking will be disabled", tid);
          }
@@ -1191,6 +1196,7 @@ extern "C" int post_read_request_impl(request_rec *r)
    // print filter values out after some checks
    if (APLOG_IS_LEVEL(r->server, level))
    {
+      ap_log_error(APLOG_MARK, level, 0, r->server, "post_read_request(): [%ld] after checks", tid);
       ap_log_error(APLOG_MARK, level, 0, r->server, "post_read_request(): [%ld] input_filter = %s", tid, to_char(input_filter));
       ap_log_error(APLOG_MARK, level, 0, r->server, "post_read_request(): [%ld] output_filter = %s", tid, to_char(output_filter));
       ap_log_error(APLOG_MARK, level, 0, r->server, "post_read_request(): [%ld] output_header = %s", tid, to_char(output_header));
@@ -1222,7 +1228,7 @@ extern "C" int post_read_request_impl(request_rec *r)
          if (APLOG_IS_LEVEL(r->server, level))
          {
             if (output_filter)
-               ap_log_error(APLOG_MARK, level, 0, r->server, "post_read_request(): [%ld] add WT_OUTPUT filter to trace the response", tid);
+               ap_log_error(APLOG_MARK, level, 0, r->server, "post_read_request(): [%ld] add WT_OUTPUT filter to read the response body", tid);
             if (output_header)
                ap_log_error(APLOG_MARK, level, 0, r->server, "post_read_request(): [%ld] add WT_OUTPUT filter to remove output headers", tid);
          }
@@ -1245,7 +1251,7 @@ extern "C" int post_read_request_impl(request_rec *r)
          input_filter_ctx->conf = conf;
          input_filter_ctx->content_length_i = std::stoul(content_length);
          input_filter_ctx->content_type.assign(content_type);
-         input_filter_ctx->query_string = input_filter_ctx->content_type == "application/x-www-form-urlencoded" && strcmp(r->method, "POST") == 0;
+         input_filter_ctx->query_string = input_filter_ctx->content_type.starts_with("application/x-www-form-urlencoded") && strcmp(r->method, "POST") == 0;
          input_filter_ctx->start_i = 0;
          input_filter_ctx->elapsed = 0;
          input_filter_ctx->getline = 0;
@@ -1254,7 +1260,17 @@ extern "C" int post_read_request_impl(request_rec *r)
          if (!transfer_encoding) transfer_encoding = "-";
          if (strcmp(content_length, "0") || strstr(transfer_encoding, "chunked"))
          {
-            if (strcmp(content_type, "-"))
+            if (input_filter_ctx->query_string)
+            {
+               if (APLOG_IS_LEVEL(r->server, level))
+               {
+                  ap_log_error(APLOG_MARK, level, 0, r->server, "post_read_request(): [%ld] query string enabled (POST + application/x-www-form-urlencoded)", tid);
+                  ap_log_error(APLOG_MARK, level, 0, r->server, "post_read_request(): [%ld] add WT_INPUT filter to read the request body", tid);
+               }
+
+               ap_add_input_filter("WT_INPUT", input_filter_ctx, r, r->connection);
+            }
+            else if (strcmp(content_type, "-"))
             {
                const char *ct_matched = search_regex_table(content_type, conf->content_table);
                if (ct_matched)
@@ -1262,7 +1278,7 @@ extern "C" int post_read_request_impl(request_rec *r)
                   if (APLOG_IS_LEVEL(r->server, level))
                   {
                      ap_log_error(APLOG_MARK, level, 0, r->server, "post_read_request(): [%ld] matched Content-Type = %s", tid, ct_matched);
-                     ap_log_error(APLOG_MARK, level, 0, r->server, "post_read_request(): [%ld] add WT_INPUT filter to trace the body", tid);
+                     ap_log_error(APLOG_MARK, level, 0, r->server, "post_read_request(): [%ld] add WT_INPUT filter to read the request body", tid);
                   }
 
                   ap_add_input_filter("WT_INPUT", input_filter_ctx, r, r->connection);
@@ -1274,7 +1290,7 @@ extern "C" int post_read_request_impl(request_rec *r)
                      if (APLOG_IS_LEVEL(r->server, level))
                      {
                         ap_log_error(APLOG_MARK, level, 0, r->server, "post_read_request(): [%ld] forced input filter cause post body enabled [%s]", tid, content_type);
-                        ap_log_error(APLOG_MARK, level, 0, r->server, "post_read_request(): [%ld] add WT_INPUT filter to trace the body", tid);
+                        ap_log_error(APLOG_MARK, level, 0, r->server, "post_read_request(): [%ld] add WT_INPUT filter to read the request body", tid);
                      }
 
                      ap_add_input_filter("WT_INPUT", input_filter_ctx, r, r->connection);
@@ -1284,7 +1300,7 @@ extern "C" int post_read_request_impl(request_rec *r)
                      if (APLOG_IS_LEVEL(r->server, level))
                      {
                         ap_log_error(APLOG_MARK, level, 0, r->server, "post_read_request(): [%ld] forced input filter cause at least a trace uri matched (%s) [%s]", tid, trace_uri_matched, content_type);
-                        ap_log_error(APLOG_MARK, level, 0, r->server, "post_read_request(): [%ld] add WT_INPUT filter to trace the body", tid);
+                        ap_log_error(APLOG_MARK, level, 0, r->server, "post_read_request(): [%ld] add WT_INPUT filter to read the request body", tid);
                      }
 
                      ap_add_input_filter("WT_INPUT", input_filter_ctx, r, r->connection);
@@ -1292,7 +1308,7 @@ extern "C" int post_read_request_impl(request_rec *r)
                   else
                   {
                      if (APLOG_IS_LEVEL(r->server, level))
-                        ap_log_error(APLOG_MARK, level, 0, r->server, "post_read_request(): [%ld] forced input_filter to 0", tid);
+                        ap_log_error(APLOG_MARK, level, 0, r->server, "post_read_request(): [%ld] forced input_filter to false", tid);
                      input_filter = false;
                   }
                }
@@ -1304,7 +1320,7 @@ extern "C" int post_read_request_impl(request_rec *r)
                   if (APLOG_IS_LEVEL(r->server, level))
                   {
                      ap_log_error(APLOG_MARK, level, 0, r->server, "post_read_request(): [%ld] forced input filter cause post body enabled (no content type)", tid);
-                     ap_log_error(APLOG_MARK, level, 0, r->server, "post_read_request(): [%ld] add WT_INPUT filter to trace the body", tid);
+                     ap_log_error(APLOG_MARK, level, 0, r->server, "post_read_request(): [%ld] add WT_INPUT filter to read the request body", tid);
                   }
 
                   ap_add_input_filter("WT_INPUT", input_filter_ctx, r, r->connection);
@@ -1314,7 +1330,7 @@ extern "C" int post_read_request_impl(request_rec *r)
                   if (APLOG_IS_LEVEL(r->server, level))
                   {
                      ap_log_error(APLOG_MARK, level, 0, r->server, "post_read_request(): [%ld] forced input filter cause at least a trace uri matched (%s) (no content type)", tid, trace_uri_matched);
-                     ap_log_error(APLOG_MARK, level, 0, r->server, "post_read_request(): [%ld] add WT_INPUT filter to trace the body", tid);
+                     ap_log_error(APLOG_MARK, level, 0, r->server, "post_read_request(): [%ld] add WT_INPUT filter to read the request body", tid);
                   }
 
                   ap_add_input_filter("WT_INPUT", input_filter_ctx, r, r->connection);
@@ -1322,7 +1338,7 @@ extern "C" int post_read_request_impl(request_rec *r)
                else
                {
                   if (APLOG_IS_LEVEL(r->server, level))
-                     ap_log_error(APLOG_MARK, level, 0, r->server, "post_read_request(): [%ld] forced input_filter to 0", tid);
+                     ap_log_error(APLOG_MARK, level, 0, r->server, "post_read_request(): [%ld] forced input_filter to false", tid);
                   input_filter = false;
                }
             }
@@ -1350,12 +1366,19 @@ extern "C" int log_transaction_impl(request_rec *r)
 {
    pthread_t tid = syscall(SYS_gettid);
 
-   auto level = is_debug_enabled(r->uri) ? APLOG_INFO : APLOG_DEBUG;
+   // get host
+   const char *host = apr_table_get(r->headers_in, "Host");
+   if (!host) host = r->hostname;
+
+   auto level = is_debug_enabled(host, r->uri) ? APLOG_INFO : APLOG_DEBUG;
 
    if (APLOG_IS_LEVEL(r->server, level))
    {
       ap_log_error(APLOG_MARK, level, 0, r->server, "log_transaction(): [%ld] start", tid);
+      ap_log_error(APLOG_MARK, level, 0, r->server, "log_transaction(): [%ld] Method = %s", tid, r->method);
+      ap_log_error(APLOG_MARK, level, 0, r->server, "log_transaction(): [%ld] Host = %s", tid, host);
       ap_log_error(APLOG_MARK, level, 0, r->server, "log_transaction(): [%ld] URI = %s", tid, r->uri);
+      ap_log_error(APLOG_MARK, level, 0, r->server, "log_transaction(): [%ld] Protocol = %s", tid, r->protocol);
       ap_log_error(APLOG_MARK, level, 0, r->server, "log_transaction(): [%ld] status = %s", tid, r->status_line);
    }
 
@@ -1447,18 +1470,7 @@ extern "C" int log_transaction_impl(request_rec *r)
       apr_table_do(log_envvars_cpp, &record, r->subprocess_env, NULL);
 
    if (APLOG_IS_LEVEL(r->server, level))
-   {
       ap_log_error(APLOG_MARK, level, 0, r->server, "log_transaction(): [%ld] **** START END OF RESPONSE ****", tid);
-      ap_log_error(APLOG_MARK, level, 0, r->server, "log_transaction(): [%ld] %lu - response_data: %s",
-                   tid, response_data.length(), response_data.c_str());
-   }
-
-   // get host
-   const char *host = apr_table_get(r->headers_in, "Host");
-   if (!host) host = r->hostname;
-
-   if (APLOG_IS_LEVEL(r->server, level))
-      ap_log_error(APLOG_MARK, level, 0, r->server, "log_transaction(): [%ld] Host = %s", tid, host);
 
    // retrieve appid
    const char *appid = 0;
@@ -1558,7 +1570,6 @@ extern "C" int log_transaction_impl(request_rec *r)
       {
          // write record log data
          bool ok = wt_record_write(record_data);
-         record_data.clear();
 
          // release all locks
          APR_ANYLOCK_UNLOCK(&conf->record_thread_mutex);
@@ -1574,6 +1585,8 @@ extern "C" int log_transaction_impl(request_rec *r)
             if (APLOG_IS_LEVEL(r->server, APLOG_ALERT))
                ap_log_error(APLOG_MARK, APLOG_ALERT, 0, r->server, "ALERT: failed to write to log file record: uuid = %s, bytes to write = %ld", uuid, record_data.length());
          }
+
+         record_data.clear();
       }
       else
       {
@@ -1603,7 +1616,11 @@ extern "C" int wt_input_filter_impl(ap_filter_t *f, apr_bucket_brigade *bb, ap_i
 {
    pthread_t tid = syscall(SYS_gettid);
 
-   auto level = is_debug_enabled(f->r->uri) ? APLOG_INFO :  APLOG_DEBUG;
+   // get host
+   const char *host = apr_table_get(f->r->headers_in, "Host");
+   if (!host) host = f->r->hostname;
+
+   auto level = is_debug_enabled(host, f->r->uri) ? APLOG_INFO : APLOG_DEBUG;
 
    if (APLOG_C_IS_LEVEL(f->c, level))
    {
@@ -1682,7 +1699,7 @@ extern "C" int wt_input_filter_impl(ap_filter_t *f, apr_bucket_brigade *bb, ap_i
                   if (APLOG_C_IS_LEVEL(f->c, level))
                      ap_log_cerror(APLOG_MARK, level, 0, f->c, "wt_input_filter(): [%ld] query string parameter = %s", tid, t->value);
 
-                  std::regex parameter_re { std::format(R"(?<!\w){0}=.+?&|{0}&parameter3=[^&]+$)", t->value), std::regex::icase };
+                  std::regex parameter_re { std::format(R"(\b{0}=.+?&|&{0}=[^&]+$^|{0}=.+$)", t->value) };
                   std::smatch match;
 
                   if (std::regex_search(scan, match, parameter_re))
@@ -1697,7 +1714,7 @@ extern "C" int wt_input_filter_impl(ap_filter_t *f, apr_bucket_brigade *bb, ap_i
                      scan.erase(match.position(), match.length());
 
                      if (APLOG_C_IS_LEVEL(f->c, level))
-                        ap_log_cerror(APLOG_MARK, level, 0, f->c, "wt_output_filter(): [%ld] removed %s query string parameter, new length = %ld", tid, t->value, scan.length());
+                        ap_log_cerror(APLOG_MARK, level, 0, f->c, "wt_input_filter(): [%ld] removed %s query string parameter, new length = %ld", tid, t->value, scan.length());
                   }
                }
 
@@ -1712,7 +1729,15 @@ extern "C" int wt_input_filter_impl(ap_filter_t *f, apr_bucket_brigade *bb, ap_i
                   char *data = new char[request_body_data.length() + 1];
                   std::strcpy(data, request_body_data.c_str());
                   request_body_data.clear();
-                  apr_table_set(f->r->notes, "request_body_data", data);
+                  apr_table_setn(f->r->notes, "request_body_data", data);
+
+                  if (APLOG_C_IS_LEVEL(f->c, level))
+                     ap_log_cerror(APLOG_MARK, level, 0, f->c, "wt_input_filter(): [%ld] final query string parameters = %s", tid, data);
+               }
+               else
+               {
+                  if (APLOG_C_IS_LEVEL(f->c, level))
+                     ap_log_cerror(APLOG_MARK, level, 0, f->c, "wt_input_filter(): [%ld] final query string parameters is empty", tid);
                }
             }
             else
@@ -1730,7 +1755,7 @@ extern "C" int wt_input_filter_impl(ap_filter_t *f, apr_bucket_brigade *bb, ap_i
                char *data = new char[request_body_data.length() + 1];
                std::strcpy(data, request_body_data.c_str());
                request_body_data.clear();
-               apr_table_set(f->r->notes, "request_body_data", data);
+               apr_table_setn(f->r->notes, "request_body_data", data);
             }
          }
          else
@@ -1913,7 +1938,7 @@ extern "C" int wt_input_filter_impl(ap_filter_t *f, apr_bucket_brigade *bb, ap_i
                   }
 
                   // add read bytes
-                  ctx->body.append(buffer, 0, bytes);
+                  ctx->body.append(buffer, bytes);
                   if (APLOG_C_IS_LEVEL(f->c, level))
                      ap_log_cerror(APLOG_MARK, level, 0, f->c, "wt_input_filter(): [%ld] partial bytes read so far = %ld", tid, ctx->body.length());
                }
@@ -1970,7 +1995,7 @@ extern "C" int wt_input_filter_impl(ap_filter_t *f, apr_bucket_brigade *bb, ap_i
                      if (APLOG_C_IS_LEVEL(f->c, level))
                         ap_log_cerror(APLOG_MARK, level, 0, f->c, "wt_input_filter(): [%ld] query string parameter = %s", tid, t->value);
 
-                     std::regex parameter_re { std::format(R"(?<!\w){0}=.+?&|{0}&parameter3=[^&]+$)", t->value), std::regex::icase };
+                     std::regex parameter_re { std::format(R"(\b{0}=.+?&|&{0}=[^&]+$^|{0}=.+$)", t->value) };
                      std::smatch match;
 
                      if (std::regex_search(scan, match, parameter_re))
@@ -2000,7 +2025,15 @@ extern "C" int wt_input_filter_impl(ap_filter_t *f, apr_bucket_brigade *bb, ap_i
                      char *data = new char[request_body_data.length() + 1];
                      std::strcpy(data, request_body_data.c_str());
                      request_body_data.clear();
-                     apr_table_set(f->r->notes, "request_body_data", data);
+                     apr_table_setn(f->r->notes, "request_body_data", data);
+
+                     if (APLOG_C_IS_LEVEL(f->c, level))
+                     ap_log_cerror(APLOG_MARK, level, 0, f->c, "wt_input_filter(): [%ld] final query string parameters = %s", tid, data);
+                  }
+                  else
+                  {
+                     if (APLOG_C_IS_LEVEL(f->c, level))
+                        ap_log_cerror(APLOG_MARK, level, 0, f->c, "wt_input_filter(): [%ld] final query string parameters is empty", tid);
                   }
                }
                else
@@ -2018,7 +2051,7 @@ extern "C" int wt_input_filter_impl(ap_filter_t *f, apr_bucket_brigade *bb, ap_i
                   char *data = new char[request_body_data.length() + 1];
                   std::strcpy(data, request_body_data.c_str());
                   request_body_data.clear();
-                  apr_table_set(f->r->notes, "request_body_data", data);
+                  apr_table_setn(f->r->notes, "request_body_data", data);
                }
             }
             else
@@ -2075,7 +2108,11 @@ extern "C" int wt_output_filter_impl(ap_filter_t *f, apr_bucket_brigade *bb)
 {
    pthread_t tid = syscall(SYS_gettid);
 
-   auto level = is_debug_enabled(f->r->uri) ? APLOG_INFO :  APLOG_DEBUG;
+   // get host
+   const char *host = apr_table_get(f->r->headers_in, "Host");
+   if (!host) host = f->r->hostname;
+
+   auto level = is_debug_enabled(host, f->r->uri) ? APLOG_INFO : APLOG_DEBUG;
 
    if (APLOG_C_IS_LEVEL(f->c, level))
       ap_log_cerror(APLOG_MARK, level, 0, f->c, "wt_output_filter(): [%ld] start", tid);
@@ -2287,35 +2324,16 @@ extern "C" int wt_output_filter_impl(ap_filter_t *f, apr_bucket_brigade *bb)
             // payload length
             auto payload_length = ctx->body.length();
 
-            auto end_of_headers = ctx->body.find("\r\n\r\n");
-            if (end_of_headers != std::string::npos)
-            {
-               if (APLOG_C_IS_LEVEL(f->c, level))
-                  ap_log_cerror(APLOG_MARK, level, 0, f->c, "wt_output_filter(): [%ld] found the end of the header part (WINDOWS)", tid);
-               end_of_headers += 4;
-               payload_length -= end_of_headers;
-            }
-            else
-            {
-               end_of_headers = ctx->body.find("\n\n");
-               
-               if (end_of_headers != std::string::npos)
-               {
-                  if (APLOG_C_IS_LEVEL(f->c, level))
-                     ap_log_cerror(APLOG_MARK, level, 0, f->c, "wt_output_filter(): [%ld] found the end of the header part (UNIX/MACOS)", tid);
-                  end_of_headers += 2;
-                  payload_length -= end_of_headers;
-               }
-            }
-         
             if (!ctx->body.empty())
             {
                auto end_of_headers = ctx->body.find("\r\n\r\n");
                if (end_of_headers != std::string::npos)
                {
-                  if (APLOG_C_IS_LEVEL(f->c, level))
-                     ap_log_cerror(APLOG_MARK, level, 0, f->c, "wt_output_filter(): [%ld] found the end of the header part (WINDOWS)", tid);
                   end_of_headers += 4;
+                  
+                  if (APLOG_C_IS_LEVEL(f->c, level))
+                     ap_log_cerror(APLOG_MARK, level, 0, f->c, "wt_output_filter(): [%ld] found the end of the header part (%ld) [WINDOWS]", tid, end_of_headers);
+                  
                   payload_length -= end_of_headers;
                }
                else
@@ -2324,9 +2342,11 @@ extern "C" int wt_output_filter_impl(ap_filter_t *f, apr_bucket_brigade *bb)
                   
                   if (end_of_headers != std::string::npos)
                   {
-                     if (APLOG_C_IS_LEVEL(f->c, level))
-                        ap_log_cerror(APLOG_MARK, level, 0, f->c, "wt_output_filter(): [%ld] found the end of the header part (UNIX/MACOS)", tid);
                      end_of_headers += 2;
+
+                     if (APLOG_C_IS_LEVEL(f->c, level))
+                        ap_log_cerror(APLOG_MARK, level, 0, f->c, "wt_output_filter(): [%ld] found the end of the header part (%ld) [UNIX/MACOS]", tid, end_of_headers);
+
                      payload_length -= end_of_headers;
                   }
                }
@@ -2409,7 +2429,7 @@ extern "C" int wt_output_filter_impl(ap_filter_t *f, apr_bucket_brigade *bb)
                   char * data = new char[response_body_data.length() + 1];
                   std::strcpy(data, response_body_data.c_str());
                   response_body_data.clear();
-                  apr_table_set(f->r->notes, "response_body_data", data);                  
+                  apr_table_setn(f->r->notes, "response_body_data", data);                  
                }
                else if (payload_length == 0)
                {
@@ -2516,7 +2536,7 @@ extern "C" int wt_output_filter_impl(ap_filter_t *f, apr_bucket_brigade *bb)
             if (ctx->output_filter)
             {
                // add read bytes
-               ctx->body.append(buffer, 0, bytes);
+               ctx->body.append(buffer, bytes);
 
                if (APLOG_C_IS_LEVEL(f->c, level))
                   ap_log_cerror(APLOG_MARK, level, 0, f->c, "wt_output_filter(): [%ld] partial bytes read so far = %ld", tid, ctx->body.length());
@@ -2528,13 +2548,17 @@ extern "C" int wt_output_filter_impl(ap_filter_t *f, apr_bucket_brigade *bb)
                   ap_log_cerror(APLOG_MARK, level, 0, f->c, "wt_output_filter(): [%ld] scan for response headers to be removed ...", tid);
                
                bool headers_found = false;
-               std::string scan { buffer, 0, bytes };
-               for (value_table_t *t = ctx->conf->output_header_table; t; t = t->next)
+               std::string scan { buffer, bytes };
+               
+               if (APLOG_C_IS_LEVEL(f->c, level))
+                  ap_log_cerror(APLOG_MARK, level, 0, f->c, "wt_output_filter(): [%ld] scan = %s", tid, scan.c_str());
+
+               for (value_table_t *t = ctx->conf->output_header_table; t != 0; t = t->next)
                {
                   if (APLOG_C_IS_LEVEL(f->c, level))
                      ap_log_cerror(APLOG_MARK, level, 0, f->c, "wt_output_filter(): [%ld] response header = %s", tid, t->value);
                   
-                  std::regex header_re { std::format(R"((?<!\w){}:\s*.+\r?\n)", t->value), std::regex::icase };
+                  std::regex header_re { std::format(R"(\b{}:\s*.+\r?\n)", t->value), std::regex::icase };
                   std::smatch match;
 
                   if (std::regex_search(scan, match, header_re))
@@ -2577,31 +2601,31 @@ extern "C" int wt_output_filter_impl(ap_filter_t *f, apr_bucket_brigade *bb)
 
                if (APLOG_C_IS_LEVEL(f->c, level))
                   ap_log_cerror(APLOG_MARK, level, 0, f->c, "wt_output_filter(): [%ld] scan for response headers to be removed done", tid);
-            }
 
-            if (!ctx->output_filter && ctx->output_header)
-            {
-               auto end_of_headers = ctx->body.find("\r\n\r\n");
-               if (end_of_headers != std::string::npos)
+               if (ctx->output_header)
                {
-                  if (APLOG_C_IS_LEVEL(f->c, level))
-                     ap_log_cerror(APLOG_MARK, level, 0, f->c, "wt_output_filter(): [%ld] found the end of the header part (WINDOWS)", tid);
-                  ctx->output_header = false;
-               }
-               else
-               {
-                  end_of_headers = ctx->body.find("\n\n");
-                  
+                  auto end_of_headers = scan.find("\r\n\r\n");
                   if (end_of_headers != std::string::npos)
                   {
                      if (APLOG_C_IS_LEVEL(f->c, level))
-                        ap_log_cerror(APLOG_MARK, level, 0, f->c, "wt_output_filter(): [%ld] found the end of the header part (UNIX/MACOS)", tid);
+                        ap_log_cerror(APLOG_MARK, level, 0, f->c, "wt_output_filter(): [%ld] found the end of the header part [WINDOWS]", tid);
                      ctx->output_header = false;
+                  }
+                  else
+                  {
+                     end_of_headers = scan.find("\n\n");
+                     
+                     if (end_of_headers != std::string::npos)
+                     {
+                        if (APLOG_C_IS_LEVEL(f->c, level))
+                           ap_log_cerror(APLOG_MARK, level, 0, f->c, "wt_output_filter(): [%ld] found the end of the header part [UNIX/MACOS]", tid);
+                        ctx->output_header = false;
+                     }
                   }
                }
             }
 
-            if (!ctx->output_filter && ctx->output_header)
+            if (!ctx->output_filter && !ctx->output_header)
             {
                // update elapsed times
                apr_time_t end_filter = apr_time_now();
