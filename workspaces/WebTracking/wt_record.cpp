@@ -18,6 +18,7 @@
 #include <shared_mutex>
 #include <mutex>
 #include <algorithm>
+#include <chrono>
 
 class wt_record
 {
@@ -53,7 +54,7 @@ namespace
    bool active { false };
 }
 
-std::string trim(const std::string &str)
+std::string trim(std::string &&str)
 {
    auto start = str.begin();
    while (start != str.end() && std::isspace(*start)) ++start;
@@ -66,11 +67,12 @@ std::string trim(const std::string &str)
 
 void manage_debug_file()
 {
+   const std::string debug_file_path { "/tmp/webtracking_debug_uris" };
    unsigned short seconds { 60 };
 
    while (active)
    {
-      if (++seconds < 60)
+      if (seconds++ < 60)
       {
          std::this_thread::sleep_for(std::chrono::seconds { 1 });
          continue;
@@ -78,16 +80,16 @@ void manage_debug_file()
 
       std::unordered_set<std::string> temp;
 
-      if (std::filesystem::exists("~/.webtracking_debug_uris") && 
-         std::filesystem::is_regular_file("~/.webtracking_debug_uris"))
+      if (std::filesystem::exists(debug_file_path) && 
+         std::filesystem::is_regular_file(debug_file_path))
       {
-         std::ifstream debug_file { "~/.webtracking_debug_uris" };
+         std::ifstream debug_file { debug_file_path };
          if (debug_file)
          {
             std::string line;
             while (std::getline(debug_file, line))
             {
-               line = trim(line);
+               line = trim(std::move(line));
                if (!line.empty() && line[0] != '#') temp.insert(line);
             }
          }

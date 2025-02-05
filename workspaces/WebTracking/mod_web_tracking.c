@@ -5,6 +5,8 @@
  * 2025.2.4.1  2025-02-04    Implement request/responce cycle functions using C++23
  *                           Implement record file management in C++23
  *                           Change tracking data record format and contents
+ *                           Change requirements for directives WebTrackingDisablingHeader 
+ *                           and WebTrackingOutputHeader
  *                           Add styling to server status hook
  *                           Implement hot debug for specific resources
  *                           Remove directive WebTrackingPrintWASUser
@@ -147,7 +149,7 @@ module AP_MODULE_DECLARE_DATA web_tracking_module;
 APLOG_USE_MODULE(web_tracking);
 
 // version
-const char *version = "Web Tracking Apache Module 2025.2.4.1 (C17/C++23)";
+const char *version = "Web Tracking Apache Module 2025.2.5.1 (C17/C++23)";
 
 wt_counter_t *wt_counter = 0;
 static apr_shm_t *shm_counter = 0;
@@ -390,7 +392,9 @@ static const char *wt_tracking_disabling_header(cmd_parms *cmd, void *dummy, con
 {
    wt_config_t *conf = ap_get_module_config(cmd->server->module_config, &web_tracking_module);
 
-   if (strlen(header) < 5 || strncasecmp(header, "X-WT-", 5)) return "ERROR: Web Tracking Apache Module: Invalid disabling header name";
+   if (strlen(header) < 4) return "ERROR: Web Tracking Apache Module: Invalid disabling header name";
+   else if (strlen(header) < 6 && strncasecmp(header, "WT-", 3)) return "ERROR: Web Tracking Apache Module: Invalid disabling header name";
+   else if (strncasecmp(header, "X-WT-", 5) && strncasecmp(header, "WT-", 3)) return "ERROR: Web Tracking Apache Module: Invalid disabling header name";
 
    conf->header_off_table = add_value(cmd->pool, conf->header_off_table, header);
 
@@ -401,7 +405,9 @@ static const char *wt_tracking_output_header(cmd_parms *cmd, void *dummy, const 
 {
    wt_config_t *conf = ap_get_module_config(cmd->server->module_config, &web_tracking_module);
 
-   if (strlen(header) < 5 || strncasecmp(header, "X-WT-", 5)) return "ERROR: Web Tracking Apache Module: Invalid output header name";
+   if (strlen(header) < 4) return "ERROR: Web Tracking Apache Module: Invalid output header name";
+   else if (strlen(header) < 6 && strncasecmp(header, "WT-", 3)) return "ERROR: Web Tracking Apache Module: Invalid output header name";
+   else if (strncasecmp(header, "X-WT-", 5) && strncasecmp(header, "WT-", 3)) return "ERROR: Web Tracking Apache Module: Invalid output header name";
 
    conf->output_header_table = add_value(cmd->pool, conf->output_header_table, header);
 
