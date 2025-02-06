@@ -127,9 +127,13 @@ void wt_record_release_internal(wt_record &record)
    record.out.flush();
    record.out.close();
 
-   // move file to archive folder
-   std::string destination_file = wt_record::archive_folder + '/' + record.name;
-   std::filesystem::rename(record.file_path, destination_file);
+   // move file to the archive folder only if it is different from the standard folder
+   if (wt_record::folder != wt_record::archive_folder)
+   {
+      std::string destination_file = wt_record::archive_folder + '/' + record.name;
+      std::filesystem::rename(record.file_path, destination_file);
+   }
+   
 }
 
 // private function to close and remove current file

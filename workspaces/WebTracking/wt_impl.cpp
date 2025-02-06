@@ -1619,8 +1619,8 @@ extern "C" int log_transaction_impl(request_rec *r)
             if (APLOG_IS_LEVEL(r->server, APLOG_INFO))
             {
                std::string elapsed { to_string(write_end - write_start) };
-               ap_log_error(APLOG_MARK, APLOG_INFO, 0, r->server, "[WT-METRICS: %s | %s | %s | %s | %s | %ld | %s]", 
-                                                                  uuid, appid, r->uri, to_char(has_request_body),
+               ap_log_error(APLOG_MARK, APLOG_INFO, 0, r->server, "[WT-METRICS: %s | %s | %s | %d | %s | %s | %ld | %s]", 
+                                                                  uuid, appid, r->uri, r->status, to_char(has_request_body),
                                                                   to_char(has_response_body), record_data.length(),
                                                                   elapsed.c_str());
             }
@@ -1633,8 +1633,8 @@ extern "C" int log_transaction_impl(request_rec *r)
             if (APLOG_IS_LEVEL(r->server, APLOG_INFO))
             {
                std::string elapsed { to_string(write_end - write_start) };
-               ap_log_error(APLOG_MARK, APLOG_INFO, 0, r->server, "[WT-METRICS: %s | %s | %s | %s | %s | FAILURE | %s]", 
-                                                                  uuid, appid, r->uri, to_char(has_request_body),
+               ap_log_error(APLOG_MARK, APLOG_INFO, 0, r->server, "[WT-METRICS: %s | %s | %s | %d | %s | %s | KO | %s]", 
+                                                                  uuid, appid, r->uri, r->status, to_char(has_request_body),
                                                                   to_char(has_response_body), elapsed.c_str());
             }
 

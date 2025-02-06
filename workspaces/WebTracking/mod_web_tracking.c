@@ -2,7 +2,7 @@
 
 /*
  * VERSION       DATE        DESCRIPTION
- * 2025.2.4.1  2025-02-04    Implement request/responce cycle functions using C++23
+ * 2025.2.6.1  2025-02-06    Implement request/responce cycle functions using C++23
  *                           Implement record file management in C++23
  *                           Change tracking data record format and contents
  *                           Change requirements for directives WebTrackingDisablingHeader 
@@ -149,7 +149,7 @@ module AP_MODULE_DECLARE_DATA web_tracking_module;
 APLOG_USE_MODULE(web_tracking);
 
 // version
-const char *version = "Web Tracking Apache Module 2025.2.5.1 (C17/C++23)";
+const char *version = "Web Tracking Apache Module 2025.2.6.1 (C17/C++23)";
 
 wt_counter_t *wt_counter = 0;
 static apr_shm_t *shm_counter = 0;
@@ -1182,9 +1182,9 @@ static int wt_status_hook(request_rec *r, int flags)
       snprintf(formatted, 16, "%'u", apr_atomic_read32(&conf->t_response));
       ap_rprintf(r, "            <dt>Responses: <b>%s</b></dt>\n", formatted);
       snprintf(formatted, 16, "%'u", apr_atomic_read32(&conf->t_body_request));
-      ap_rprintf(r, "            <dt>Body Requests: <b>%s</b></dt>\n", formatted);
+      ap_rprintf(r, "            <dt>Request Bodies: <b>%s</b></dt>\n", formatted);
       snprintf(formatted, 16, "%'u\n", apr_atomic_read32(&conf->t_body_response));
-      ap_rprintf(r, "            <dt>Body Responses: <b>%s</b></dt>\n", formatted);
+      ap_rprintf(r, "            <dt>Response Bodies: <b>%s</b></dt>\n", formatted);
       ap_rprintf(r, "         </dl>\n");
 
       if (wt_counter)
@@ -1196,9 +1196,9 @@ static int wt_status_hook(request_rec *r, int flags)
          snprintf(formatted, 16, "%'u", apr_atomic_read32(&wt_counter->t_response));
          ap_rprintf(r, "            <dt>Responses: <b>%s</b></dt>\n", formatted);
          snprintf(formatted, 16, "%'u", apr_atomic_read32(&wt_counter->t_body_request));
-         ap_rprintf(r, "            <dt>Body Requests: <b>%s</b></dt>\n", formatted);
+         ap_rprintf(r, "            <dt>Request Bodies: <b>%s</b></dt>\n", formatted);
          snprintf(formatted, 16, "%'u", apr_atomic_read32(&wt_counter->t_body_response));
-         ap_rprintf(r, "            <dt>Body Responses: <b>%s</b></dt>\n", formatted);
+         ap_rprintf(r, "            <dt>Response Bodies: <b>%s</b></dt>\n", formatted);
          ap_rprintf(r, "         </dl>\n");
       }
 
