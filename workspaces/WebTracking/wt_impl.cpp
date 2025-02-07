@@ -3,6 +3,7 @@
 #include <format>
 #include <regex>
 #include <chrono>
+#include <list>
 #include <cstdarg>
 #include <cstring>
 
@@ -13,6 +14,10 @@ namespace
    constexpr std::string_view set_cookie_pattern { R"(\b{}=[^;]+;?(?: Domain=[^;]+;?| Expires=[^;]+;?| HttpOnly;?| Max-Age=[^;]+;?| Partitioned;?| Path=[^;]+;?| Secure;?| SameSite=[^;]+;?)*\s*)" };
    constexpr std::string_view parameter_pattern { R"(\b{0}=.+?&|&{0}=[^&]+$^|{0}=.+$)" };
    constexpr std::string_view header_pattern { R"(\b{}:\s*.+\r?\n)" };
+   
+   std::list<std::regex> cookies_re {};
+   std::list<std::regex> set_cookies_re {};
+   std::list<std::regex> headers_re {};
 }
 
 // https://en.cppreference.com/w/c/io/fprintf
@@ -625,7 +630,7 @@ std::string wt_inflate(const std::string &in, int wrap)
    return plain;
 }
 
-extern "C" int log_headers_cpp(void *rec, const char *key, const char *value)
+int log_headers_cpp(void *rec, const char *key, const char *value)
 {
    record_cpp *record = static_cast<record_cpp *>(rec);
 
@@ -659,14 +664,12 @@ extern "C" int log_headers_cpp(void *rec, const char *key, const char *value)
       {
          if (record->conf->exclude_cookie_table)
          {
-            for (value_table_t *t = record->conf->exclude_cookie_table; t != 0; t = t->next)
+            for (auto &parameter_re : cookies_re)
             {
                try
                {
-                  std::regex parameter_re { std::format(cookie_pattern, t->value) };
-                  std::smatch match;
-
                   // remove found cookies
+                  std::smatch match;
                   if (std::regex_search(header_value, match, parameter_re)) header_value.erase(match.position(), match.length());
                }
 
@@ -681,23 +684,21 @@ extern "C" int log_headers_cpp(void *rec, const char *key, const char *value)
          if (record->conf->exclude_cookie_table)
          {
             if (record->conf->exclude_cookie_table)
-         {
-            for (value_table_t *t = record->conf->exclude_cookie_table; t != 0; t = t->next)
             {
-               try
+               for (auto &parameter_re : set_cookies_re)
                {
-                  std::regex parameter_re { std::format(set_cookie_pattern, t->value) };
-                  std::smatch match;
+                  try
+                  {
+                     // remove found cookies
+                     std::smatch match;
+                     if (std::regex_search(header_value, match, parameter_re)) header_value.erase(match.position(), match.length());
+                  }
 
-                  // remove found cookies
-                  if (std::regex_search(header_value, match, parameter_re)) header_value.erase(match.position(), match.length());
-               }
-
-               catch (const std::exception &e)
-               {
+                  catch (const std::exception &e)
+                  {
+                  }
                }
             }
-         }
          }
       }
 
@@ -713,14 +714,14 @@ extern "C" int log_headers_cpp(void *rec, const char *key, const char *value)
    return 1;
 }
 
-extern "C" int log_headers_for_trace_cpp(void *rec, const char *key, const char *value)
+int log_headers_for_trace_cpp(void *rec, const char *key, const char *value)
 {
    record_cpp *record = static_cast<record_cpp *>(rec);
    record->data.append(format_string("|\"%s: %s\"", key, value));
    return 1;
 }
 
-extern "C" int log_envvars_cpp(void *rec, const char *key, const char *value)
+int log_envvars_cpp(void *rec, const char *key, const char *value)
 {
    record_cpp *record = static_cast<record_cpp *>(rec);
 
@@ -737,6 +738,30 @@ extern "C" int log_envvars_cpp(void *rec, const char *key, const char *value)
    }
 
    return 1;
+}
+
+extern "C" void initialize_regular_expressions(const wt_config_t *conf)
+{
+   // cookies
+   for (value_table_t *t = conf->exclude_cookie_table; t != 0; t = t->next)
+   {
+      try { cookies_re.push_back(std::regex { std::format(cookie_pattern, t->value), std::regex::icase }); }
+      catch (const std::exception &e) {}
+   }
+
+   // set-cookies
+   for (value_table_t *t = conf->exclude_cookie_table; t != 0; t = t->next)
+   {
+      try { set_cookies_re.push_back(std::regex { std::format(set_cookie_pattern, t->value), std::regex::icase }); }
+      catch (const std::exception &e) {}
+   }
+
+   // headers
+   for (value_table_t *t = conf->output_header_table; t != 0; t = t->next)
+   {
+      try { headers_re.push_back(std::regex { std::format(header_pattern, t->value), std::regex::icase }); }
+      catch (const std::exception &e) {}
+   }
 }
 
 extern "C" int post_read_request_impl(request_rec *r)
@@ -1056,7 +1081,7 @@ extern "C" int post_read_request_impl(request_rec *r)
       ap_log_error(APLOG_MARK, level, 0, r->server, "post_read_request(): [%ld] timestamp = %s", tid, timestamp.c_str());
 
    // Initialize request data
-   std::string request_data = format_string("**REQUEST**|\"%s\"|\"%s\"|\"%s\"|\"%s\"|\"%s://%s%s",
+   std::string request_data = format_string("\"**REQUEST**\"|\"%s\"|\"%s\"|\"%s\"|\"%s\"|\"%s://%s%s",
                                             timestamp.c_str(), remote_ip, r->protocol, r->method,
                                             scheme, host, r->uri);
 
@@ -1219,8 +1244,8 @@ extern "C" int post_read_request_impl(request_rec *r)
    }
 
    // increment counter
-   apr_atomic_inc32(&conf->t_request);
-   if (wt_counter) apr_atomic_inc32(&wt_counter->t_request);
+   apr_atomic_inc32(&conf->requests);
+   if (wt_counter) apr_atomic_inc32(&wt_counter->requests);
 
    if (input_filter || output_filter || output_header)
    {
@@ -1448,7 +1473,7 @@ extern "C" int log_transaction_impl(request_rec *r)
       ap_log_error(APLOG_MARK, level, 0, r->server, "log_transaction(): [%ld] uuid = %s", tid, uuid);
 
    // Initialize response data
-   std::string response_data{"**RESPONSE**|"};
+   std::string response_data{"\"**RESPONSE**\"|"};
 
    // status code and elapsed time
    std::string elapsed = to_string(start - r->request_time);
@@ -1457,11 +1482,13 @@ extern "C" int log_transaction_impl(request_rec *r)
       ap_log_error(APLOG_MARK, level, 0, r->server, "log_transaction(): [%ld] elapsed time = %s", tid, elapsed.c_str());
 
    // get content type
-   const char *content_type = apr_table_get(r->headers_in, "Content-Type");
+   const char *content_type = apr_table_get(r->headers_out, "Content-Type");
    if (!content_type) content_type = "-";
    if (APLOG_IS_LEVEL(r->server, level))
       ap_log_error(APLOG_MARK, level, 0, r->server, "log_transaction(): [%ld] Content-Type = %s", tid, content_type);
-   response_data.append(format_string("|\"%s\"|\"%ld\"|\"%ld\"|\"HEADERS\"", content_type, r->read_length, r->bytes_sent));
+   
+   // complete response prefix
+   response_data.append(format_string("|\"%ld\"|\"%ld\"|\"HEADERS\"", r->read_length, r->bytes_sent));
 
    // auxiliary object
    record_cpp record{response_data, conf};
@@ -1521,8 +1548,8 @@ extern "C" int log_transaction_impl(request_rec *r)
    }
 
    // increment counter
-   apr_atomic_inc32(&conf->t_response);
-   if (wt_counter) apr_atomic_inc32(&wt_counter->t_response);
+   apr_atomic_inc32(&conf->responses);
+   if (wt_counter) apr_atomic_inc32(&wt_counter->responses);
 
    // get request, request_body and response body part
    const char *request_data = apr_table_get(r->notes, "request_data");
@@ -1620,8 +1647,8 @@ extern "C" int log_transaction_impl(request_rec *r)
             {
                std::string elapsed { to_string(write_end - write_start) };
                ap_log_error(APLOG_MARK, APLOG_INFO, 0, r->server, "[WT-METRICS: %s | %s | %s | %d | %s | %s | %ld | %s]", 
-                                                                  uuid, appid, r->uri, r->status, to_char(has_request_body),
-                                                                  to_char(has_response_body), record_data.length(),
+                                                                  uuid, appid, r->uri, r->status, (has_request_body ? "REQUEST" : "NO"),
+                                                                  (has_response_body ? "RESPONSE" : "NO"), record_data.length(),
                                                                   elapsed.c_str());
             }
             
@@ -1634,8 +1661,8 @@ extern "C" int log_transaction_impl(request_rec *r)
             {
                std::string elapsed { to_string(write_end - write_start) };
                ap_log_error(APLOG_MARK, APLOG_INFO, 0, r->server, "[WT-METRICS: %s | %s | %s | %d | %s | %s | KO | %s]", 
-                                                                  uuid, appid, r->uri, r->status, to_char(has_request_body),
-                                                                  to_char(has_response_body), elapsed.c_str());
+                                                                  uuid, appid, r->uri, r->status, (has_request_body ? "REQUEST" : "NO"),
+                                                                  (has_response_body ? "RESPONSE" : "NO"), elapsed.c_str());
             }
 
             if (APLOG_IS_LEVEL(r->server, APLOG_ALERT))
@@ -1816,7 +1843,7 @@ extern "C" int wt_input_filter_impl(ap_filter_t *f, apr_bucket_brigade *bb, ap_i
                               tid, to_string(apr_time_now() - start_b64).c_str());
 
                // request body data
-               std::string request_body_data { "**REQUEST_BODY**|" + record_b64 };
+               std::string request_body_data { "\"**REQUEST_BODY**\"|" + record_b64 };
                char *data = new char[request_body_data.length() + 1];
                std::strcpy(data, request_body_data.c_str());
                request_body_data.clear();
@@ -1833,8 +1860,8 @@ extern "C" int wt_input_filter_impl(ap_filter_t *f, apr_bucket_brigade *bb, ap_i
             ap_log_cerror(APLOG_MARK, level, 0, f->c, "wt_input_filter(): [%ld] **** FINISH END OF REQUEST BODY ****", tid);
 
          // increment counter
-         apr_atomic_inc32(&ctx->conf->t_body_request);
-         if (wt_counter) apr_atomic_inc32(&wt_counter->t_body_request);
+         apr_atomic_inc32(&ctx->conf->request_bodies);
+         if (wt_counter) apr_atomic_inc32(&wt_counter->request_bodies);
 
          // update elapsed times
          apr_time_t end_filter = apr_time_now();
@@ -2122,7 +2149,7 @@ extern "C" int wt_input_filter_impl(ap_filter_t *f, apr_bucket_brigade *bb, ap_i
                                  tid, to_string(apr_time_now() - start_b64).c_str());
 
                   // request body data
-                  std::string request_body_data { "**REQUEST_BODY**|" + record_b64 };
+                  std::string request_body_data { "\"**REQUEST_BODY**\"|" + record_b64 };
                   char *data = new char[request_body_data.length() + 1];
                   std::strcpy(data, request_body_data.c_str());
                   request_body_data.clear();
@@ -2139,8 +2166,8 @@ extern "C" int wt_input_filter_impl(ap_filter_t *f, apr_bucket_brigade *bb, ap_i
                ap_log_cerror(APLOG_MARK, level, 0, f->c, "wt_input_filter(): [%ld] **** FINISH END OF REQUEST BODY ****", tid);
             
             // increment counter
-            apr_atomic_inc32(&ctx->conf->t_body_request);
-            if (wt_counter) apr_atomic_inc32(&wt_counter->t_body_request);
+            apr_atomic_inc32(&ctx->conf->request_bodies);
+            if (wt_counter) apr_atomic_inc32(&wt_counter->request_bodies);
 
             // update elapsed times
             apr_time_t end_filter = apr_time_now();
@@ -2459,6 +2486,10 @@ extern "C" int wt_output_filter_impl(ap_filter_t *f, apr_bucket_brigade *bb)
                               
                               ctx->body = ctx->body.substr(0, end_of_headers).append(inflated);
 
+                                 // increment counter
+                                 apr_atomic_inc32(&ctx->conf->response_inflated_bodies);
+                                 if (wt_counter) apr_atomic_inc32(&wt_counter->response_inflated_bodies);
+
                               if (APLOG_C_IS_LEVEL(f->c, level))
                                  ap_log_cerror(APLOG_MARK, level, 0, f->c, "wt_output_filter(): [%ld] response body length = %ld", tid, ctx->body.length());
                            }
@@ -2504,7 +2535,7 @@ extern "C" int wt_output_filter_impl(ap_filter_t *f, apr_bucket_brigade *bb)
                                  tid, to_string(apr_time_now() - start_b64).c_str());
 
                   // response body data
-                  std::string response_body_data { "**RESPONSE_BODY**|" + record_b64 };
+                  std::string response_body_data { "\"**RESPONSE_BODY**\"|" + record_b64 };
                   char * data = new char[response_body_data.length() + 1];
                   std::strcpy(data, response_body_data.c_str());
                   response_body_data.clear();
@@ -2531,8 +2562,8 @@ extern "C" int wt_output_filter_impl(ap_filter_t *f, apr_bucket_brigade *bb)
                ap_log_cerror(APLOG_MARK, level, 0, f->c, "wt_output_filter(): [%ld] **** FINISH END OF RESPONSE BODY ****", tid);
 
             // increment counter
-            apr_atomic_inc32(&ctx->conf->t_body_response);
-            if (wt_counter) apr_atomic_inc32(&wt_counter->t_body_response);
+            apr_atomic_inc32(&ctx->conf->response_bodies);
+            if (wt_counter) apr_atomic_inc32(&wt_counter->response_bodies);
 
             // update elapsed times
             apr_time_t end_filter = apr_time_now();
@@ -2633,37 +2664,29 @@ extern "C" int wt_output_filter_impl(ap_filter_t *f, apr_bucket_brigade *bb)
                if (APLOG_C_IS_LEVEL(f->c, level))
                   ap_log_cerror(APLOG_MARK, level, 0, f->c, "wt_output_filter(): [%ld] scan = %s", tid, scan.c_str());
 
-               for (value_table_t *t = ctx->conf->output_header_table; t != 0; t = t->next)
+               for (auto &header_re : headers_re)
                {
-                  if (APLOG_C_IS_LEVEL(f->c, level))
-                     ap_log_cerror(APLOG_MARK, level, 0, f->c, "wt_output_filter(): [%ld] response header = %s", tid, t->value);
-                  
                   try
                   {
-                     std::regex header_re { std::format(header_pattern, t->value), std::regex::icase };
                      std::smatch match;
-
                      if (std::regex_search(scan, match, header_re))
                      {                  
                         if (APLOG_C_IS_LEVEL(f->c, level))
-                        {
-                           ap_log_cerror(APLOG_MARK, level, 0, f->c, "wt_output_filter(): [%ld] found %s response header", tid, t->value);
-                           ap_log_cerror(APLOG_MARK, level, 0, f->c, "wt_output_filter(): [%ld] %s response header length = %ld", tid, t->value, match.length());
-                        }
+                           ap_log_cerror(APLOG_MARK, level, 0, f->c, "wt_output_filter(): [%ld] found a response header to be excluded", tid);
                            
                         // remove header
                         scan.erase(match.position(), match.length());
                         headers_found = true;
 
                         if (APLOG_C_IS_LEVEL(f->c, level))
-                           ap_log_cerror(APLOG_MARK, level, 0, f->c, "wt_output_filter(): [%ld] removed %s response header, new length = %ld", tid, t->value, scan.length());
+                           ap_log_cerror(APLOG_MARK, level, 0, f->c, "wt_output_filter(): [%ld] removed found response header, new bucket length = %ld", tid, scan.length());
                      }
                   }
 
                   catch (const std::exception &e)
                   {
                      if (APLOG_C_IS_LEVEL(f->c, level))
-                           ap_log_cerror(APLOG_MARK, level, 0, f->c, "wt_output_filter(): [%ld] search for %s response header failed because of %s", tid, t->value, e.what());
+                           ap_log_cerror(APLOG_MARK, level, 0, f->c, "wt_output_filter(): [%ld] search for response headers failed because of %s", tid, e.what());
                   }
                }
 
