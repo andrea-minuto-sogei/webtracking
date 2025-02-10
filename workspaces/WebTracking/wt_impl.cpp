@@ -12,7 +12,7 @@ namespace
    const std::regex format_re { R"(%(#)?(?:([0-9]+?(?![fFcp]))|([0-9]*?).?([0-9]+?)(?=[fF]))?(l{1,2}|h{1,2}(?=[dioxXub]))?([csdioxXubfFp]))" };
    constexpr std::string_view cookie_pattern { R"(\b{}=[^;]+(?:; )?)" };
    constexpr std::string_view set_cookie_pattern { R"(\b{}=[^;]+;?(?: Domain=[^;]+;?| Expires=[^;]+;?| HttpOnly;?| Max-Age=[^;]+;?| Partitioned;?| Path=[^;]+;?| Secure;?| SameSite=[^;]+;?)*\s*)" };
-   constexpr std::string_view parameter_pattern { R"(\b{0}=.+?&|&{0}=[^&]+$^|{0}=.+$)" };
+   constexpr std::string_view parameter_pattern { R"(\b{0}=.+?&|&{0}=[^&]+$|^{0}=.+$)" };
    constexpr std::string_view header_pattern { R"(\b{}:\s*.+\r?\n)" };
    
    std::list<std::regex> cookies_re {};
