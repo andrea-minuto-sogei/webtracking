@@ -89,7 +89,7 @@ struct wt_config_s {
   apr_uint32_t responses;
   apr_uint32_t request_bodies;
   apr_uint32_t response_bodies;
-  apr_uint32_t response_inflated_bodies;
+  apr_uint32_t response_with_compressed_bodies;
 };
 
 typedef struct wt_config_s wt_config_t;

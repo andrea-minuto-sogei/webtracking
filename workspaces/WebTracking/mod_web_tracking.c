@@ -2,13 +2,14 @@
 
 /*
  * VERSION       DATE        DESCRIPTION
- * 2025.2.7.1  2025-02-07    Implement request/responce cycle functions using C++23
+ * 2025.2.10.1  2025-02-10   Implement request/responce cycle functions using C++23
  *                           Implement record file management in C++23
  *                           Change tracking data record format and contents
  *                           Change requirements for directives WebTrackingDisablingHeader 
  *                           and WebTrackingOutputHeader
  *                           Add styling to server status hook
  *                           Implement hot debug for specific resources
+ *                           Implement some runtime optimizations and some code enhancements
  *                           Remove directive WebTrackingPrintWASUser
  *                           Remove directive WebTrackingPrintRequestHeader
  *                           Move to GNU Compiler Collection 14.2.1
@@ -149,7 +150,7 @@ module AP_MODULE_DECLARE_DATA web_tracking_module;
 APLOG_USE_MODULE(web_tracking);
 
 // version
-const char *version = "Web Tracking Apache Module 2025.2.7.1 (C17/C++23)";
+const char *version = "Web Tracking Apache Module 2025.2.10.1 (C17/C++23)";
 
 wt_counter_t *wt_counter = 0;
 static apr_shm_t *shm_counter = 0;
@@ -181,7 +182,7 @@ static void *create_server_config(apr_pool_t *p, server_rec *s)
    apr_atomic_set32(&conf->responses, 0);
    apr_atomic_set32(&conf->request_bodies, 0);
    apr_atomic_set32(&conf->response_bodies, 0);
-   apr_atomic_set32(&conf->response_inflated_bodies, 0);
+   apr_atomic_set32(&conf->response_with_compressed_bodies, 0);
 
    return conf;
 }
@@ -1191,10 +1192,10 @@ static int wt_status_hook(request_rec *r, int flags)
       snprintf(formatted, 32, "%'u", apr_atomic_read32(&conf->request_bodies));
       ap_rprintf(r, "            <dt>Request Bodies: <b>%s</b></dt>\n", formatted);
       apr_uint32_t responses = apr_atomic_read32(&conf->response_bodies);
-      apr_uint32_t inflated = apr_atomic_read32(&conf->response_inflated_bodies);
-      if (responses > 0) inflated = inflated * 100 / responses;
-      else inflated = 0;
-      snprintf(formatted, 32, "%'u (%u%% inflated)\n", responses, inflated);
+      apr_uint32_t compressed = apr_atomic_read32(&conf->response_with_compressed_bodies);
+      if (responses > 0) compressed = compressed * 100 / responses;
+      else compressed = 0;
+      snprintf(formatted, 32, "%'u (%u%% compressed)\n", responses, compressed);
       ap_rprintf(r, "            <dt>Response Bodies: <b>%s</b></dt>\n", formatted);
       ap_rprintf(r, "         </dl>\n");
 
@@ -1209,10 +1210,10 @@ static int wt_status_hook(request_rec *r, int flags)
          snprintf(formatted, 32, "%'u", apr_atomic_read32(&wt_counter->request_bodies));
          ap_rprintf(r, "            <dt>Request Bodies: <b>%s</b></dt>\n", formatted);
          apr_uint32_t responses = apr_atomic_read32(&wt_counter->response_bodies);
-         apr_uint32_t inflated = apr_atomic_read32(&wt_counter->response_inflated_bodies);
-         if (responses > 0) inflated = inflated * 100 / responses;
-         else inflated = 0;
-         snprintf(formatted, 32, "%'u (%u%% inflated)\n", responses, inflated);
+         apr_uint32_t compressed = apr_atomic_read32(&wt_counter->response_inflated_bodies);
+         if (responses > 0) compressed = compressed * 100 / responses;
+         else compressed = 0;
+         snprintf(formatted, 32, "%'u (%u%% compressed)\n", responses, compressed);
          ap_rprintf(r, "            <dt>Response Bodies: <b>%s</b></dt>\n", formatted);
          ap_rprintf(r, "         </dl>\n");
       }
