@@ -116,7 +116,7 @@ bool is_debug_enabled(const std::string &hostname, const std::string &uri)
 
 // private release function
 void wt_record_release_internal(wt_record &record)
-{
+try {
    // nothing to release
    if (!record.out) return;
 
@@ -133,8 +133,9 @@ void wt_record_release_internal(wt_record &record)
       std::string destination_file = wt_record::archive_folder + '/' + record.name;
       std::filesystem::rename(record.file_path, destination_file);
    }
-   
 }
+
+catch (const std::exception &e) {}
 
 // private function to close and remove current file
 static void wt_record_move_current_file()

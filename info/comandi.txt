@@ -6,28 +6,6 @@ scl enable gcc-toolset-14 bash
 # Build
 gcc -std=c++23 -std=c17 -D_LARGEFILE64_SOURCE=1 -L/home/webihs/IHS/lib -shared -static-libstdc++ -o /home/webihs/webtracking/lib/mod_web_tracking.so -I/home/webihs/IHS/include -I/home/webihs/workspaces/WebTracking/zlib -O3 -Wall -fmessage-length=0 -fPIC /home/webihs/workspaces/WebTracking/*.cpp /home/webihs/workspaces/WebTracking/*.c /home/webihs/workspaces/WebTracking/zlib/*.c /opt/rh/gcc-toolset-14/root/usr/lib/gcc/x86_64-redhat-linux/14/libstdc++.a
 
-# Deploy
-mv -v /prod/tracciamento/archives/webtracking-bin.zip /home/webihs/
-scp -p /prod/tracciamento/archives/webtracking-bin.zip siamv-prx-wl02.srv.sogei.it:.
-
-### Collector
-#
-## Build
-#g++ -s -L/usr/lib64 -static-libgcc -static-libstdc++ -pthread -o /home/webihs/workspaces/Collector/wt_collector -std=c++20 -I/prod/tracciamento/libs/openssl/include -I/prod/tracciamento/libs/rdkafka/include/librdkafka -I/prod/tracciamento/libs/curl/include -I/prod/tracciamento/libs/pqxx/include -O3 -Wall -fmessage-length=0 -fPIC /home/webihs/workspaces/Collector/*.cpp /prod/tracciamento/libs/curl/lib/libcurl.a /prod/tracciamento/libs/nghttp2/lib/libnghttp2.a /prod/tracciamento/libs/rdkafka/lib/librdkafka.a /prod/tracciamento/libs/openssl/lib64/libssl.a /prod/tracciamento/libs/openssl/lib64/libcrypto.a /prod/tracciamento/libs/zlib/lib/libz.a /prod/tracciamento/libs/cyrus-sasl/lib/libsasl2.a /prod/tracciamento/libs/gdbm/lib/libgdbm.a /prod/tracciamento/libs/krb5/lib/libgssapi_krb5.a /prod/tracciamento/libs/krb5/lib/libkrb5.a /prod/tracciamento/libs/krb5/lib/libkrb5support.a /prod/tracciamento/libs/krb5/lib/libk5crypto.a /prod/tracciamento/libs/krb5/lib/libkrb5.a /prod/tracciamento/libs/krb5/lib/libcom_err.a /prod/tracciamento/libs/openssl/lib64/libcrypto.a /prod/tracciamento/libs/cyrus-sasl/lib/sasl2/libgssapiv2.a /prod/tracciamento/libs/lz4/lib/liblz4.a /prod/tracciamento/libs/pqxx/lib/libpqxx.a -lpq -lresolv -lm -lrt -ldl
-#
-# Deploy
-#mv /home/webihs/workspaces/Collector/wt_collector /prod/webtracking/bin/wt_collector_rh8
-#scp -p /prod/tracciamento/webtracking/bin/wt_collector_rh8 siamv-prx-wl02.srv.sogei.it:/prod/webtracking/bin/wt_collector_rh8
-
-## Test funzionamento wt_collector (plain)
-#/prod/webtracking/bin/wt_collector_rh8 --stdout kafka simple simple_t
-#
-## Test funzionamento wt_collector (encrypted)
-#/prod/webtracking/bin/wt_collector_rh8 --stdout kafka --encrypt crypto/wt_collector.pub simple simple_t
-#
-## Test funzionamento input file diretto
-#/prod/webtracking/bin/wt_collector_rh8 --stdout --file /prod/tracciamento/ihs/logs/webtracking.log --timeout 0 --no-stop kafka webtracking simple_t
-
 ## Archivi
 
 # Creazione archivio binari
@@ -36,39 +14,3 @@ cd && zip -r -FS -dc /prod/tracciamento/archives/webtracking-bin.zip webtracking
 
 # Creazione archivio sorgenti
 cd /prod/tracciamento && zip -r -FS -dc archives/webtracking-src.zip workspaces/WebTracking/ workspaces/Collector/ info && cd -
-
-## Database
-
-# Validazione
-host: siamv-prx-al02.srv.sogei.it
-user: liberty
-port: 5432
-comandi:
-    - createdb -h 127.0.0.1 -U liberty audittrail
-    
-    - /usr/bin/psql -h localhost audittrail
-        - GRANT CONNECT ON DATABASE audittrail TO monitor;
-    
-    - file postgresql/data/pg_hba.conf:
-        - host    audittrail      monitor         26.0.0.0/16             password
-        - host    audittrail      monitor         10.50.0.0/16            password
-    
-    - # restart
-    - /usr/bin/pg_ctl -D /home/liberty/postgresql/data stop
-    - /usr/bin/pg_ctl -D /home/liberty/postgresql/data -l /home/liberty/postgresql/logs/postgresql.log -o '-h 0.0.0.0 -k /home/liberty/postgresql/socket' start
-    
-    - # test
-    - /usr/bin/psql -h siamv-prx-al02.srv.sogei.it -U monitor audittrail
-    - password: 9796809F7DA
-
-
-## Visual Studio Code
-- Visual Studio Code: https://code.visualstudio.com/docs/?dv=linux64_rpm
-- C/C++ Extension Pack (https://marketplace.visualstudio.com/items?itemName=ms-vscode.cpptools-extension-pack)
-- vscode-icons (https://marketplace.visualstudio.com/items?itemName=vscode-icons-team.vscode-icons)
-- Eclipse Keymap (https://marketplace.visualstudio.com/items?itemName=alphabotsec.vscode-eclipse-keybindings)
-
-Comandi:
-- [root] rpm -U /prod/tracciamento/vscode/code-<version>.el7.x86_64.rpm
-- code --install-extension /prod/tracciamento/vscode/<extension>.vsix
-

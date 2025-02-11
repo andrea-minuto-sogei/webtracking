@@ -586,6 +586,7 @@ struct wt_output_filter_cpp
    apr_time_t elapsed;
    bool output_header;
    bool output_filter;
+   bool headers_found;
 };
 
 std::string wt_inflate(const std::string &in, int wrap)
@@ -1152,7 +1153,6 @@ extern "C" int post_read_request_impl(request_rec *r)
    // save request data to a note
    char *data = new char[request_data.length() + 1];
    std::strcpy(data, request_data.c_str());
-   request_data.clear();
    apr_table_setn(r->notes, "request_data", data);
 
    if (APLOG_IS_LEVEL(r->server, request_log_level))
@@ -1278,6 +1278,7 @@ extern "C" int post_read_request_impl(request_rec *r)
          output_filter_ctx->elapsed = 0;
          output_filter_ctx->output_header = output_header;
          output_filter_ctx->output_filter = output_filter;
+         output_filter_ctx->headers_found = false;
 
          if (APLOG_IS_LEVEL(r->server, request_log_level))
          {
@@ -1618,7 +1619,6 @@ extern "C" int log_transaction_impl(request_rec *r)
 
       // response
       record_data.append(1, '|').append(response_data);
-      response_data.clear();
 
       // response body
       if (has_response_body)
@@ -1686,8 +1686,6 @@ extern "C" int log_transaction_impl(request_rec *r)
             if (APLOG_IS_LEVEL(r->server, APLOG_ALERT))
                ap_log_error(APLOG_MARK, APLOG_ALERT, 0, r->server, "ALERT: failed to write to log file record: uuid = %s, bytes to write = %ld", uuid, record_data.length());
          }
-
-         record_data.clear();
       }
       else
       {
@@ -1830,10 +1828,8 @@ extern "C" int wt_input_filter_impl(ap_filter_t *f, apr_bucket_brigade *bb, ap_i
 
                   // Add the query string as header "*Post"
                   std::string request_body_data { "*Post: " + ctx->body };
-                  ctx->body.clear();
                   char *data = new char[request_body_data.length() + 1];
                   std::strcpy(data, request_body_data.c_str());
-                  request_body_data.clear();
                   apr_table_setn(f->r->notes, "request_body_data", data);
 
                   if (APLOG_C_IS_LEVEL(f->c, request_log_level))
@@ -1850,7 +1846,6 @@ extern "C" int wt_input_filter_impl(ap_filter_t *f, apr_bucket_brigade *bb, ap_i
                // BASE64 encoding
                apr_time_t start_b64 = apr_time_now();
                std::string record_b64 = base64encode(ctx->body);
-               ctx->body.clear();
                if (APLOG_C_IS_LEVEL(f->c, request_log_level))
                   ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_input_filter(): [%ld] BASE64 encoding elapsed time = %s",
                               tid, to_string(apr_time_now() - start_b64).c_str());
@@ -1859,7 +1854,6 @@ extern "C" int wt_input_filter_impl(ap_filter_t *f, apr_bucket_brigade *bb, ap_i
                std::string request_body_data { "\"**REQUEST_BODY**\"|" + record_b64 };
                char *data = new char[request_body_data.length() + 1];
                std::strcpy(data, request_body_data.c_str());
-               request_body_data.clear();
                apr_table_setn(f->r->notes, "request_body_data", data);
             }
          }
@@ -2142,10 +2136,8 @@ extern "C" int wt_input_filter_impl(ap_filter_t *f, apr_bucket_brigade *bb, ap_i
                      
                         // Add the query string as header "*Post"
                      std::string request_body_data { "*Post: " + ctx->body };
-                     ctx->body.clear();
                      char *data = new char[request_body_data.length() + 1];
                      std::strcpy(data, request_body_data.c_str());
-                     request_body_data.clear();
                      apr_table_setn(f->r->notes, "request_body_data", data);
 
                      if (APLOG_C_IS_LEVEL(f->c, request_log_level))
@@ -2162,7 +2154,6 @@ extern "C" int wt_input_filter_impl(ap_filter_t *f, apr_bucket_brigade *bb, ap_i
                   // BASE64 encoding
                   apr_time_t start_b64 = apr_time_now();
                   std::string record_b64 = base64encode(ctx->body);
-                  ctx->body.clear();
                   if (APLOG_C_IS_LEVEL(f->c, request_log_level))
                      ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_input_filter(): [%ld] BASE64 encoding elapsed time = %s",
                                  tid, to_string(apr_time_now() - start_b64).c_str());
@@ -2171,7 +2162,6 @@ extern "C" int wt_input_filter_impl(ap_filter_t *f, apr_bucket_brigade *bb, ap_i
                   std::string request_body_data { "\"**REQUEST_BODY**\"|" + record_b64 };
                   char *data = new char[request_body_data.length() + 1];
                   std::strcpy(data, request_body_data.c_str());
-                  request_body_data.clear();
                   apr_table_setn(f->r->notes, "request_body_data", data);
                }
             }
@@ -2288,14 +2278,13 @@ extern "C" int wt_output_filter_impl(ap_filter_t *f, apr_bucket_brigade *bb)
    apr_time_t start_filter = apr_time_now();
    if (ctx->start_o == 0) ctx->start_o = start_filter;
 
-   const char *content_type = "-";
    if (f->r && f->r->headers_out && ctx->output_filter)
    {
       if (APLOG_C_IS_LEVEL(f->c, request_log_level))
          ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_output_filter(): [%ld] request_rec is present, search Content_Type", tid);
 
-      content_type = apr_table_get(f->r->headers_out, "Content-Type");
-      if (content_type)
+      if (const char *content_type = apr_table_get(f->r->headers_out, "Content-Type");
+          content_type)
       {
          if (APLOG_C_IS_LEVEL(f->c, request_log_level))
             ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_output_filter(): [%ld] Content-Type = %s", tid, content_type);
@@ -2352,7 +2341,6 @@ extern "C" int wt_output_filter_impl(ap_filter_t *f, apr_bucket_brigade *bb)
       {
          if (APLOG_C_IS_LEVEL(f->c, request_log_level))
             ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_output_filter(): [%ld] Content-Type is empty", tid);
-         content_type = "-";
 
          if (!ctx->output_header && !ctx->trace_uri)
          {
@@ -2390,9 +2378,9 @@ extern "C" int wt_output_filter_impl(ap_filter_t *f, apr_bucket_brigade *bb)
                ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_output_filter(): [%ld] forced to continue cause at least a trace uri matched (output_header: %d)", tid, ctx->output_header);
          }
       }
-
-      const char *content_length = apr_table_get(f->r->headers_out, "Content-Length");
-      if (content_length)
+      
+      if (const char *content_length = apr_table_get(f->r->headers_out, "Content-Length"); 
+          content_length)
       {
          unsigned long cl = std::stoul(content_length);
          unsigned long clinmb = cl / 1'048'576L;
@@ -2462,38 +2450,10 @@ extern "C" int wt_output_filter_impl(ap_filter_t *f, apr_bucket_brigade *bb)
                ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_output_filter(): [%ld] total bytes read = %ld", tid, ctx->body.length());
             }
 
-            // payload length
-            auto payload_length = ctx->body.length();
-
             if (!ctx->body.empty())
             {
-               auto end_of_headers = ctx->body.find("\r\n\r\n");
-               if (end_of_headers != std::string::npos)
-               {
-                  end_of_headers += 4;
-                  
-                  if (APLOG_C_IS_LEVEL(f->c, request_log_level))
-                     ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_output_filter(): [%ld] found the end of the header part (%ld) [WINDOWS]", tid, end_of_headers);
-                  
-                  payload_length -= end_of_headers;
-               }
-               else
-               {
-                  end_of_headers = ctx->body.find("\n\n");
-                  
-                  if (end_of_headers != std::string::npos)
-                  {
-                     end_of_headers += 2;
-
-                     if (APLOG_C_IS_LEVEL(f->c, request_log_level))
-                        ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_output_filter(): [%ld] found the end of the header part (%ld) [UNIX/MACOS]", tid, end_of_headers);
-
-                     payload_length -= end_of_headers;
-                  }
-               }
-
-               const char *ce = apr_table_get(f->r->headers_out, "Content-Encoding");
-               if (ce && (!strcmp(ce, "deflate") || !strcmp(ce, "gzip")))
+               if (const char *ce = apr_table_get(f->r->headers_out, "Content-Encoding");
+                   ce && (!strcmp(ce, "deflate") || !strcmp(ce, "gzip")))
                {
                   if (APLOG_C_IS_LEVEL(f->c, request_log_level))
                      ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_output_filter(): [%ld] the response body is compressed (%s)", tid, ce);
@@ -2507,43 +2467,33 @@ extern "C" int wt_output_filter_impl(ap_filter_t *f, apr_bucket_brigade *bb)
                      if (APLOG_C_IS_LEVEL(f->c, request_log_level))
                         ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_output_filter(): [%ld] the response body must be inflated", tid);
 
-                     if (end_of_headers != std::string::npos)
+                     if (!ctx->body.empty())
                      {
                         if (APLOG_C_IS_LEVEL(f->c, request_log_level))
-                           ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_output_filter(): [%ld] payload length (deflated) = %ld", tid, payload_length);
+                           ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_output_filter(): [%ld] payload length (deflated) = %ld", tid, ctx->body.length());
 
-                        if (payload_length > 0)
+                        if (APLOG_C_IS_LEVEL(f->c, request_log_level))
+                           ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_output_filter(): [%ld] inflate the payload", tid);
+                        
+                        std::string inflated = wt_inflate(ctx->body, !strcmp(ce, "gzip") ? 2 : 1);
+                        
+                        if (!inflated.empty())
                         {
                            if (APLOG_C_IS_LEVEL(f->c, request_log_level))
-                              ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_output_filter(): [%ld] inflate the payload", tid);
-                           std::string inflated = wt_inflate(ctx->body.substr(end_of_headers), !strcmp(ce, "gzip") ? 2 : 1);
+                              ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_output_filter(): [%ld] payload length (inflated) = %ld", tid, inflated.length());
                            
-                           if (!inflated.empty())
-                           {
-                              if (APLOG_C_IS_LEVEL(f->c, request_log_level))
-                                 ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_output_filter(): [%ld] payload length (inflated) = %ld", tid, inflated.length());
-                              
-                              ctx->body = ctx->body.substr(0, end_of_headers).append(inflated);
-
-                              if (APLOG_C_IS_LEVEL(f->c, request_log_level))
-                                 ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_output_filter(): [%ld] response body length = %ld", tid, ctx->body.length());
-                           }
-                           else
-                           {
-                              if (APLOG_C_IS_LEVEL(f->c, request_log_level))
-                                 ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_output_filter(): [%ld] payload not inflated (failure)", tid);
-                           }
+                           ctx->body.assign(inflated);
                         }
                         else
                         {
                            if (APLOG_C_IS_LEVEL(f->c, request_log_level))
-                              ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_output_filter(): [%ld] weird content-encoding because there is nothing to inflate", tid);
+                              ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_output_filter(): [%ld] payload not inflated (failure)", tid);
                         }
                      }
                      else
                      {
                         if (APLOG_C_IS_LEVEL(f->c, request_log_level))
-                           ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_output_filter(): [%ld] not found the end of headers, leave it intact", tid);
+                           ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_output_filter(): [%ld] weird content-encoding because there is nothing to inflate", tid);
                      }
                   }
                   else
@@ -2554,17 +2504,16 @@ extern "C" int wt_output_filter_impl(ap_filter_t *f, apr_bucket_brigade *bb)
                }
 
                if (APLOG_C_IS_LEVEL(f->c, request_log_level))
-                  ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_output_filter(): [%ld] payload length = %ld", tid, payload_length);
+                  ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_output_filter(): [%ld] payload length = %ld", tid, ctx->body.length());
             }
 
             if (ctx->conf->log_enabled)
             {
-               if (payload_length > 0 && (payload_length / 1'048'576L) <= ctx->conf->body_limit)
+               if (ctx->body.length() > 0 && (ctx->body.length() / 1'048'576L) <= ctx->conf->body_limit)
                {
                   // BASE64 encoding
                   apr_time_t start_b64 = apr_time_now();
                   std::string record_b64 = base64encode(ctx->body);
-                  ctx->body.clear();
                   if (APLOG_C_IS_LEVEL(f->c, request_log_level))
                      ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_output_filter(): [%ld] BASE64 encoding elapsed time = %s",
                                  tid, to_string(apr_time_now() - start_b64).c_str());
@@ -2573,10 +2522,9 @@ extern "C" int wt_output_filter_impl(ap_filter_t *f, apr_bucket_brigade *bb)
                   std::string response_body_data { "\"**RESPONSE_BODY**\"|" + record_b64 };
                   char * data = new char[response_body_data.length() + 1];
                   std::strcpy(data, response_body_data.c_str());
-                  response_body_data.clear();
                   apr_table_setn(f->r->notes, "response_body_data", data);                  
                }
-               else if (payload_length == 0)
+               else if (ctx->body.length() == 0)
                {
                   if (APLOG_C_IS_LEVEL(f->c, request_log_level))
                      ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_output_filter(): [%ld] payload length = 0, nothing to do", tid);
@@ -2687,9 +2635,39 @@ extern "C" int wt_output_filter_impl(ap_filter_t *f, apr_bucket_brigade *bb)
 
             if (ctx->output_filter)
             {
-               // add read bytes
-               ctx->body.append(buffer, bytes);
+               if (!ctx->headers_found)
+               {
+                  std::string scan { buffer, bytes };
 
+                  if (auto end_of_headers = scan.find("\r\n\r\n");
+                     end_of_headers != std::string::npos)
+                  {
+                     if (APLOG_C_IS_LEVEL(f->c, request_log_level))
+                        ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_output_filter(): [%ld] found the end of the header part (%ld) [WINDOWS]", tid, end_of_headers);
+
+                     ctx->body.assign(scan.substr(end_of_headers + 4));
+                     ctx->headers_found = true;
+                  }
+                  else if (end_of_headers = scan.find("\n\n");
+                           end_of_headers != std::string::npos)
+                  {
+                     if (APLOG_C_IS_LEVEL(f->c, request_log_level))
+                        ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_output_filter(): [%ld] found the end of the header part (%ld) [UNIX/MACOS]", tid, end_of_headers);
+
+                     ctx->body.assign(scan.substr(end_of_headers + 2));
+                     ctx->headers_found = true;
+                  }
+                  else
+                  {
+                     ctx->body.append(scan);
+                  }
+               }
+               else
+               {
+                  // add read bytes
+                  ctx->body.append(buffer, bytes);
+               }
+               
                if (APLOG_C_IS_LEVEL(f->c, request_log_level))
                   ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_output_filter(): [%ld] partial bytes read so far = %ld", tid, ctx->body.length());
             }
@@ -2760,23 +2738,20 @@ extern "C" int wt_output_filter_impl(ap_filter_t *f, apr_bucket_brigade *bb)
 
                if (ctx->output_header)
                {
-                  auto end_of_headers = scan.find("\r\n\r\n");
-                  if (end_of_headers != std::string::npos)
+                  if (auto end_of_headers = scan.find("\r\n\r\n");
+                      end_of_headers != std::string::npos)
                   {
                      if (APLOG_C_IS_LEVEL(f->c, request_log_level))
                         ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_output_filter(): [%ld] found the end of the header part [WINDOWS]", tid);
                      ctx->output_header = false;
                   }
-                  else
+                  else if (end_of_headers = scan.find("\n\n");
+                           end_of_headers != std::string::npos)
                   {
-                     end_of_headers = scan.find("\n\n");
+                     if (APLOG_C_IS_LEVEL(f->c, request_log_level))
+                        ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_output_filter(): [%ld] found the end of the header part [UNIX/MACOS]", tid);
                      
-                     if (end_of_headers != std::string::npos)
-                     {
-                        if (APLOG_C_IS_LEVEL(f->c, request_log_level))
-                           ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_output_filter(): [%ld] found the end of the header part [UNIX/MACOS]", tid);
-                        ctx->output_header = false;
-                     }
+                     ctx->output_header = false;
                   }
                }
             }
