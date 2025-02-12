@@ -366,8 +366,7 @@ namespace
    inline size_t basepos(char c, const char *base) noexcept
    {
       const char *t = std::strchr(base, c);
-      if (!t)
-         return 255;
+      if (!t) return 255;
       return t - base;
    }
 
@@ -533,12 +532,12 @@ inline const char *to_char(bool value)
 APR_DECLARE_OPTIONAL_FN(int, ssl_is_https, (conn_rec *));
 static APR_OPTIONAL_FN_TYPE(ssl_is_https) *proxy_is_https = NULL;
 
-static int conn_is_https(conn_rec *c, wt_config_t *conf, apr_table_t *headers)
+static bool conn_is_https(conn_rec *c, wt_config_t *conf, apr_table_t *headers)
 {
    proxy_is_https = APR_RETRIEVE_OPTIONAL_FN(ssl_is_https);
    if (proxy_is_https) return proxy_is_https(c);
-   if (conf->ssl_indicator) return apr_table_get(headers, conf->ssl_indicator) != NULL;
-   else return 0;
+   if (conf->ssl_indicator) return !!apr_table_get(headers, conf->ssl_indicator);
+   else return false;
 }
 
 /* External functions, linked correctly but not declared by header files */
@@ -546,7 +545,9 @@ extern int gethostname(char *name, size_t len);
 extern long syscall(long number, ...);
 
 // Enable log functions for module
+#ifdef APLOG_USE_MODULE
 APLOG_USE_MODULE(web_tracking);
+#endif
 
 static apr_uint32_t next_id = 0;
 
@@ -787,13 +788,13 @@ extern "C" int post_read_request_impl(request_rec *r)
 
    request_log_level = is_debug_enabled(host, r->uri) ? APLOG_INFO : APLOG_DEBUG;
 
-   if (APLOG_IS_LEVEL(r->server, request_log_level))
+   if (APLOG_R_IS_LEVEL(r, request_log_level))
    {
-      ap_log_error(APLOG_MARK, request_log_level, 0, r->server, "post_read_request(): [%ld] start", tid);
-      ap_log_error(APLOG_MARK, request_log_level, 0, r->server, "post_read_request(): [%ld] Method = %s", tid, r->method);
-      ap_log_error(APLOG_MARK, request_log_level, 0, r->server, "post_read_request(): [%ld] Host = %s", tid, host);
-      ap_log_error(APLOG_MARK, request_log_level, 0, r->server, "post_read_request(): [%ld] URI = %s", tid, r->uri);
-      ap_log_error(APLOG_MARK, request_log_level, 0, r->server, "post_read_request(): [%ld] Protocol = %s", tid, r->protocol);
+      ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] start", tid);
+      ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] Method = %s", tid, r->method);
+      ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] Host = %s", tid, host);
+      ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] URI = %s", tid, r->uri);
+      ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] Protocol = %s", tid, r->protocol);
       
    }
 
@@ -803,8 +804,8 @@ extern "C" int post_read_request_impl(request_rec *r)
    // internal redirect?
    if (r->prev)
    {
-      if (APLOG_IS_LEVEL(r->server, request_log_level))
-         ap_log_error(APLOG_MARK, request_log_level, 0, r->server, "post_read_request(): [%ld] end (DECLINED)", tid);
+      if (APLOG_R_IS_LEVEL(r, request_log_level))
+         ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] end (DECLINED)", tid);
       return DECLINED;
    }
 
@@ -817,8 +818,8 @@ extern "C" int post_read_request_impl(request_rec *r)
       if (APLOG_R_IS_LEVEL(r, request_log_level))
       {
          std::string elapsed{to_string(apr_time_now() - start)};
-         ap_log_error(APLOG_MARK, request_log_level, 0, r->server, "post_read_request(): [%ld] the web tracking is disabled overall", tid);
-         ap_log_error(APLOG_MARK, request_log_level, 0, r->server, "post_read_request(): [%ld] end (OK) - %s", tid, elapsed.c_str());
+         ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] the web tracking is disabled overall", tid);
+         ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] end (OK) - %s", tid, elapsed.c_str());
       }
 
       return OK;
@@ -829,8 +830,8 @@ extern "C" int post_read_request_impl(request_rec *r)
       if (APLOG_R_IS_LEVEL(r, request_log_level))
       {
          std::string elapsed{to_string(apr_time_now() - start)};
-         ap_log_error(APLOG_MARK, request_log_level, 0, r->server, "post_read_request(): [%ld] useless to do anything since there isn't any configured record file", tid);
-         ap_log_error(APLOG_MARK, request_log_level, 0, r->server, "post_read_request(): [%ld] end (OK) - %s", tid, elapsed.c_str());
+         ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] useless to do anything since there isn't any configured record file", tid);
+         ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] end (OK) - %s", tid, elapsed.c_str());
       }
 
       return OK;
@@ -841,8 +842,8 @@ extern "C" int post_read_request_impl(request_rec *r)
    const char *trace_uri_matched = search_regex_table(r->uri, conf->trace_uri_table);
    if (trace_uri_matched)
    {
-      if (APLOG_IS_LEVEL(r->server, request_log_level))
-         ap_log_error(APLOG_MARK, request_log_level, 0, r->server, "post_read_request(): [%ld] matched Trace URI = %s", tid, trace_uri_matched);
+      if (APLOG_R_IS_LEVEL(r, request_log_level))
+         ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] matched Trace URI = %s", tid, trace_uri_matched);
       trace_uri = true;
    }
 
@@ -853,31 +854,258 @@ extern "C" int post_read_request_impl(request_rec *r)
       {
          if (apr_table_get(r->headers_in, t->value))
          {
-            if (APLOG_IS_LEVEL(r->server, request_log_level))
-               ap_log_error(APLOG_MARK, request_log_level, 0, r->server, "post_read_request(): [%ld] found %s disabling header", tid, t->value);
+            if (APLOG_R_IS_LEVEL(r, request_log_level))
+               ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] found %s disabling header", tid, t->value);
 
             if (!trace_uri)
             {
-               if (APLOG_IS_LEVEL(r->server, request_log_level))
+               if (APLOG_R_IS_LEVEL(r, request_log_level))
                {
                   std::string elapsed{to_string(apr_time_now() - start)};
-                  ap_log_error(APLOG_MARK, request_log_level, 0, r->server, "post_read_request(): [%ld] end (OK) - %s", tid, elapsed.c_str());
+                  ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] end (OK) - %s", tid, elapsed.c_str());
                }
 
                return OK;
             }
             else
             {
-               if (APLOG_IS_LEVEL(r->server, request_log_level))
-                  ap_log_error(APLOG_MARK, request_log_level, 0, r->server, "post_read_request(): [%ld] forced to continue cause at least a trace uri matched (%s)", tid, trace_uri_matched);
+               if (APLOG_R_IS_LEVEL(r, request_log_level))
+                  ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] forced to continue cause at least a trace uri matched (%s)", tid, trace_uri_matched);
             }
          }
       }
    }
 
+   // check whether we got an host to be tracked
+   if (const char *host_matched = search_regex_table(host, conf->host_table);
+       !host_matched)
+   {
+      if (APLOG_R_IS_LEVEL(r, request_log_level))
+         ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] no regex hosts is matched against the current request headers", tid);
+
+      if (!trace_uri)
+      {
+         if (APLOG_R_IS_LEVEL(r, request_log_level))
+         {
+            std::string elapsed { to_string(apr_time_now() - start) };
+            ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] end (OK) - %s", tid, elapsed.c_str());
+         }
+
+         return OK;
+      }
+      else
+      {
+         if (APLOG_R_IS_LEVEL(r, request_log_level))
+            ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] forced to continue cause at least a trace uri matched (%s)", tid, trace_uri_matched);
+      }
+   }
+   else
+   {
+      if (APLOG_R_IS_LEVEL(r, request_log_level))
+         ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] matched host = %s", tid, host_matched);
+   }
+
+   // check whether we got an uri to be tracked
+   if (const char *uri_matched = search_regex_table(r->uri, conf->uri_table);
+       !uri_matched)
+   {
+      if (APLOG_R_IS_LEVEL(r, request_log_level))
+         ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] no regex uris is matched against the current uri", tid);
+
+      if (!trace_uri)
+      {
+         if (APLOG_R_IS_LEVEL(r, request_log_level))
+         {
+            std::string elapsed { to_string(apr_time_now() - start) };
+            ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] end (OK) - %s", tid, elapsed.c_str());
+         }
+
+         return OK;
+      }
+      else
+      {
+         if (APLOG_R_IS_LEVEL(r, request_log_level))
+            ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] forced to continue cause at least a trace uri matched (%s)", tid, trace_uri_matched);
+      }
+   }
+   else
+   {
+      if (APLOG_R_IS_LEVEL(r, request_log_level))
+         ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] matched URI = %s", tid, uri_matched);
+   }
+
+   // check whether we got an uri to be excluded
+   if (const char *exclude_uri_matched = search_regex_table(r->uri, conf->exclude_uri_table);
+       exclude_uri_matched)
+   {
+      if (APLOG_R_IS_LEVEL(r, request_log_level))
+      {
+         ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] matched Exclude URI = %s", tid, exclude_uri_matched);
+         ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] at least one regex exclude uri is matched against the current uri", tid);
+      }
+
+      if (!trace_uri)
+      {
+         if (APLOG_R_IS_LEVEL(r, request_log_level))
+         {
+            std::string elapsed { to_string(apr_time_now() - start) };
+            ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] end (OK) - %s", tid, elapsed.c_str());
+         }
+
+         return OK;
+      }
+      else
+      {
+         if (APLOG_R_IS_LEVEL(r, request_log_level))
+            ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] forced to continue cause at least a trace uri matched (%s)", tid, trace_uri_matched);
+      }
+   }
+
+   // get scheme
+   const char *scheme = conn_is_https(r->connection, conf, r->headers_in) ? "https" : "http";
+   if (APLOG_R_IS_LEVEL(r, request_log_level))
+      ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] scheme = %s", tid, scheme);
+
+   // check whether we got a disabled https scheme
+   if (conf->https == 0 && std::strcmp(scheme, "https") == 0)
+   {
+      if (APLOG_R_IS_LEVEL(r, request_log_level))
+         ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] https scheme is disabled", tid);
+
+      if (!trace_uri)
+      {
+         if (APLOG_R_IS_LEVEL(r, request_log_level))
+         {
+            std::string elapsed { to_string(apr_time_now() - start) };
+            ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] end (OK) - %s", tid, elapsed.c_str());
+         }
+
+         return OK;
+      }
+      else
+      {
+         if (APLOG_R_IS_LEVEL(r, request_log_level))
+            ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] forced to continue cause at least a trace uri matched (%s)", tid, trace_uri_matched);
+      }
+   }
+
+   // check whether we got a disabled http scheme
+   if (conf->http == 0 && std::strcmp(scheme, "http") == 0)
+   {
+      if (APLOG_R_IS_LEVEL(r, request_log_level))
+         ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] http scheme is disabled", tid);
+
+      if (!trace_uri)
+      {
+         if (APLOG_R_IS_LEVEL(r, request_log_level))
+         {
+            std::string elapsed { to_string(apr_time_now() - start) };
+            ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] end (OK) - %s", tid, elapsed.c_str());
+         }
+
+         return OK;
+      }
+      else
+      {
+         if (APLOG_R_IS_LEVEL(r, request_log_level))
+            ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] forced to continue cause at least a trace uri matched (%s)", tid, trace_uri_matched);
+      }
+   }
+
+   // get remote ip
+   const char *remote_ip = r->useragent_ip;
+   if (APLOG_R_IS_LEVEL(r, request_log_level))
+      ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] remote_ip = %s", tid, remote_ip);
+   if (conf->proxy)
+   {
+      if (APLOG_R_IS_LEVEL(r, request_log_level))
+         ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] proxy management enabled", tid);
+
+      const char *clientip = apr_table_get(r->headers_in, conf->clientip_header ? conf->clientip_header : "X-Forwarded-For");
+      if (clientip)
+      {
+         if (APLOG_R_IS_LEVEL(r, request_log_level))
+            ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] %s = %s", tid, conf->clientip_header ? conf->clientip_header : "X-Forwarded-For", clientip);
+         remote_ip = clientip;
+      }
+      else
+      {
+         if (APLOG_R_IS_LEVEL(r, request_log_level))
+            ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] %s header is not present though the proxy management is enabled", tid, 
+                          conf->clientip_header ? conf->clientip_header : "X-Forwarded-For");
+      }
+   }
+
+   // check whether we got a remote ip to be excluded
+   if (const char *exclude_ip_matched = search_regex_table(remote_ip, conf->exclude_ip_table);
+       exclude_ip_matched)
+   {
+      if (APLOG_R_IS_LEVEL(r, request_log_level))
+      {
+         ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] matched Exclude IP = %s", tid, exclude_ip_matched);
+         ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] at least one regex exclude ip is matched against the real remote ip", tid);
+      }
+
+      if (!trace_uri)
+      {
+         if (APLOG_R_IS_LEVEL(r, request_log_level))
+         {
+            std::string elapsed { to_string(apr_time_now() - start) };
+            ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] end (OK) - %s", tid, elapsed.c_str());
+         }
+
+         return OK;
+      }
+      else
+      {
+         if (APLOG_R_IS_LEVEL(r, request_log_level))
+            ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] forced to continue cause at least a trace uri matched (%s)", tid, trace_uri_matched);
+      }
+   }
+
+   // start building request access record part
+   if (APLOG_R_IS_LEVEL(r, request_log_level))
+      ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] start building request access record part", tid);
+
+   // timestamp
+   std::chrono::sys_time<std::chrono::milliseconds> now { std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()) };
+   std::string timestamp = std::format("{0:%Y-%m-%d %H:%M:%S %Z}", std::chrono::zoned_time(std::chrono::current_zone(), now));
+   if (APLOG_R_IS_LEVEL(r, request_log_level))
+      ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] timestamp = %s", tid, timestamp.c_str());
+
+   // Initialize request data
+   std::string request_data = format_string("\"**REQUEST**\"|\"%s\"|\"%s\"|\"%s\"|\"%s\"|\"%s://%s%s",
+                                            timestamp.c_str(), remote_ip, r->protocol, r->method,
+                                            scheme, host, r->uri);
+
+   if (r->args) request_data.append(format_string("?%s\"", r->args));
+   else request_data.append(1, '\"');
+
+   // auxiliary object
+   record_cpp record { request_data, conf };
+
+   // add headers
+   if (APLOG_R_IS_LEVEL(r, request_log_level))
+      ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] print request headers ...", tid);
+   request_data.append(format_string("|\"HEADERS\"|\"WEBTRACKING-VERSION: %s\"", version));
+   if (!trace_uri) apr_table_do(log_headers_cpp, &record, r->headers_in, NULL);
+   else apr_table_do(log_headers_for_trace_cpp, &record, r->headers_in, NULL);
+
+   // print out cookies
+   if (APLOG_R_IS_LEVEL(r, request_log_level))
+   {
+      const char *cookies = apr_table_get(r->headers_in, "cookie");
+      if (cookies) ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] cookie = %s", tid, cookies);
+   }
+
+   // add environment variable if enabled
+   if (APLOG_R_IS_LEVEL(r, request_log_level))
+      ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] print environment variables ...", tid);
+   if (conf->envvar_table) apr_table_do(log_envvars_cpp, &record, r->subprocess_env, NULL);
+
    // either get or build an uuid
-   if (APLOG_IS_LEVEL(r->server, request_log_level))
-      ap_log_error(APLOG_MARK, request_log_level, 0, r->server, "post_read_request(): [%ld] get or build uuid", tid);
+   if (APLOG_R_IS_LEVEL(r, request_log_level))
+      ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] get or build uuid", tid);
    std::string uuid_temp;
    const char *uuid = apr_table_get(r->headers_in, conf->uuid_header);
    if (!uuid)
@@ -888,266 +1116,29 @@ extern "C" int post_read_request_impl(request_rec *r)
       {
          // Generate a custom uuid because the apache web server is not configured to do by itself
          uuid_temp = format_string("%lx:%" APR_PID_T_FMT ":%lx:%x", start, getpid(), apr_time_now(), apr_atomic_inc32(&next_id));
-         uuid = uuid_temp.c_str();
-      }
-   }
-
-   uuid_temp.assign(format_string("%s:%s", conf->id, uuid));
-   uuid = uuid_temp.c_str();
-   if (APLOG_IS_LEVEL(r->server, request_log_level))
-      ap_log_error(APLOG_MARK, request_log_level, 0, r->server, "post_read_request(): [%ld] uuid = %s", tid, uuid);
-
-   // check whether we got an host to be tracked
-   const char *host_matched = search_regex_table(host, conf->host_table);
-   if (!host_matched)
-   {
-      if (APLOG_IS_LEVEL(r->server, request_log_level))
-         ap_log_error(APLOG_MARK, request_log_level, 0, r->server, "post_read_request(): [%ld] no regex hosts is matched against the current request headers", tid);
-
-      if (!trace_uri)
-      {
-         if (APLOG_IS_LEVEL(r->server, request_log_level))
-         {
-            std::string elapsed{to_string(apr_time_now() - start)};
-            ap_log_error(APLOG_MARK, request_log_level, 0, r->server, "post_read_request(): [%ld] end (OK) - %s", tid, elapsed.c_str());
-         }
-
-         return OK;
-      }
-      else
-      {
-         if (APLOG_IS_LEVEL(r->server, request_log_level))
-            ap_log_error(APLOG_MARK, request_log_level, 0, r->server, "post_read_request(): [%ld] forced to continue cause at least a trace uri matched (%s)", tid, trace_uri_matched);
       }
    }
    else
    {
-      if (APLOG_IS_LEVEL(r->server, request_log_level))
-         ap_log_error(APLOG_MARK, request_log_level, 0, r->server, "post_read_request(): [%ld] matched host = %s", tid, host_matched);
+      // uuid already exists (probably is a b2b request)
+      uuid_temp.assign(uuid);
    }
 
-   // check whether we got an uri to be tracked
-   const char *uri_matched = search_regex_table(r->uri, conf->uri_table);
-   if (!uri_matched)
-   {
-      if (APLOG_IS_LEVEL(r->server, request_log_level))
-         ap_log_error(APLOG_MARK, request_log_level, 0, r->server, "post_read_request(): [%ld] no regex uris is matched against the current uri", tid);
-
-      if (!trace_uri)
-      {
-         if (APLOG_IS_LEVEL(r->server, request_log_level))
-         {
-            std::string elapsed{to_string(apr_time_now() - start)};
-            ap_log_error(APLOG_MARK, request_log_level, 0, r->server, "post_read_request(): [%ld] end (OK) - %s", tid, elapsed.c_str());
-         }
-
-         return OK;
-      }
-      else
-      {
-         if (APLOG_IS_LEVEL(r->server, request_log_level))
-            ap_log_error(APLOG_MARK, request_log_level, 0, r->server, "post_read_request(): [%ld] forced to continue cause at least a trace uri matched (%s)", tid, trace_uri_matched);
-      }
-   }
-   else
-   {
-      if (APLOG_IS_LEVEL(r->server, request_log_level))
-         ap_log_error(APLOG_MARK, request_log_level, 0, r->server, "post_read_request(): [%ld] matched URI = %s", tid, uri_matched);
-   }
-
-   // check whether we got an uri to be excluded
-   const char *exclude_uri_matched = search_regex_table(r->uri, conf->exclude_uri_table);
-   if (exclude_uri_matched)
-   {
-      if (APLOG_IS_LEVEL(r->server, request_log_level))
-      {
-         ap_log_error(APLOG_MARK, request_log_level, 0, r->server, "post_read_request(): [%ld] matched Exclude URI = %s", tid, exclude_uri_matched);
-         ap_log_error(APLOG_MARK, request_log_level, 0, r->server, "post_read_request(): [%ld] at least one regex exclude uri is matched against the current uri", tid);
-      }
-
-      if (!trace_uri)
-      {
-         if (APLOG_IS_LEVEL(r->server, request_log_level))
-         {
-            std::string elapsed{to_string(apr_time_now() - start)};
-            ap_log_error(APLOG_MARK, request_log_level, 0, r->server, "post_read_request(): [%ld] end (OK) - %s", tid, elapsed.c_str());
-         }
-
-         return OK;
-      }
-      else
-      {
-         if (APLOG_IS_LEVEL(r->server, request_log_level))
-            ap_log_error(APLOG_MARK, request_log_level, 0, r->server, "post_read_request(): [%ld] forced to continue cause at least a trace uri matched (%s)", tid, trace_uri_matched);
-      }
-   }
-
-   // get scheme
-   const char *scheme = conn_is_https(r->connection, conf, r->headers_in) ? "https" : "http";
-   if (APLOG_IS_LEVEL(r->server, request_log_level))
-      ap_log_error(APLOG_MARK, request_log_level, 0, r->server, "post_read_request(): [%ld] scheme = %s", tid, scheme);
-
-   // check whether we got a disabled https scheme
-   if (conf->https == 0 && strcmp(scheme, "https") == 0)
-   {
-      if (APLOG_IS_LEVEL(r->server, request_log_level))
-         ap_log_error(APLOG_MARK, request_log_level, 0, r->server, "post_read_request(): [%ld] https scheme is disabled", tid);
-
-      if (!trace_uri)
-      {
-         if (APLOG_IS_LEVEL(r->server, request_log_level))
-         {
-            std::string elapsed{to_string(apr_time_now() - start)};
-            ap_log_error(APLOG_MARK, request_log_level, 0, r->server, "post_read_request(): [%ld] end (OK) - %s", tid, elapsed.c_str());
-         }
-
-         return OK;
-      }
-      else
-      {
-         if (APLOG_IS_LEVEL(r->server, request_log_level))
-            ap_log_error(APLOG_MARK, request_log_level, 0, r->server, "post_read_request(): [%ld] forced to continue cause at least a trace uri matched (%s)", tid, trace_uri_matched);
-      }
-   }
-
-   // check whether we got a disabled http scheme
-   if (conf->http == 0 && strcmp(scheme, "http") == 0)
-   {
-      if (APLOG_IS_LEVEL(r->server, request_log_level))
-         ap_log_error(APLOG_MARK, request_log_level, 0, r->server, "post_read_request(): [%ld] http scheme is disabled", tid);
-
-      if (!trace_uri)
-      {
-         if (APLOG_IS_LEVEL(r->server, request_log_level))
-         {
-            std::string elapsed{to_string(apr_time_now() - start)};
-            ap_log_error(APLOG_MARK, request_log_level, 0, r->server, "post_read_request(): [%ld] end (OK) - %s", tid, elapsed.c_str());
-         }
-
-         return OK;
-      }
-      else
-      {
-         if (APLOG_IS_LEVEL(r->server, request_log_level))
-            ap_log_error(APLOG_MARK, request_log_level, 0, r->server, "post_read_request(): [%ld] forced to continue cause at least a trace uri matched (%s)", tid, trace_uri_matched);
-      }
-   }
-
-   // get remote ip
-   const char *remote_ip = r->useragent_ip;
-   if (APLOG_IS_LEVEL(r->server, request_log_level))
-      ap_log_error(APLOG_MARK, request_log_level, 0, r->server, "post_read_request(): [%ld] remote_ip = %s", tid, remote_ip);
-   if (conf->proxy)
-   {
-      if (APLOG_IS_LEVEL(r->server, request_log_level))
-         ap_log_error(APLOG_MARK, request_log_level, 0, r->server, "post_read_request(): [%ld] proxy management enabled", tid);
-
-      const char *clientip = apr_table_get(r->headers_in, conf->clientip_header ? conf->clientip_header : "X-Forwarded-For");
-      if (clientip)
-      {
-         if (APLOG_IS_LEVEL(r->server, request_log_level))
-            ap_log_error(APLOG_MARK, request_log_level, 0, r->server, "post_read_request(): [%ld] %s = %s", tid, conf->clientip_header != NULL ? conf->clientip_header : "X-Forwarded-For", clientip);
-         remote_ip = clientip;
-      }
-      else
-      {
-         if (APLOG_IS_LEVEL(r->server, request_log_level))
-            ap_log_error(APLOG_MARK, request_log_level, 0, r->server, "post_read_request(): [%ld] %s header is not present though the proxy management is enabled", tid, conf->clientip_header != NULL ? conf->clientip_header : "X-Forwarded-For");
-      }
-   }
-
-   // check whether we got a remote ip to be excluded
-   const char *exclude_ip_matched = search_regex_table(remote_ip, conf->exclude_ip_table);
-   if (exclude_ip_matched)
-   {
-      if (APLOG_IS_LEVEL(r->server, request_log_level))
-      {
-         ap_log_error(APLOG_MARK, request_log_level, 0, r->server, "post_read_request(): [%ld] matched Exclude IP = %s", tid, exclude_ip_matched);
-         ap_log_error(APLOG_MARK, request_log_level, 0, r->server, "post_read_request(): [%ld] at least one regex exclude ip is matched against the real remote ip", tid);
-      }
-
-      if (!trace_uri)
-      {
-         if (APLOG_IS_LEVEL(r->server, request_log_level))
-         {
-            std::string elapsed{to_string(apr_time_now() - start)};
-            ap_log_error(APLOG_MARK, request_log_level, 0, r->server, "post_read_request(): [%ld] end (OK) - %s", tid, elapsed.c_str());
-         }
-
-         return OK;
-      }
-      else
-      {
-         if (APLOG_IS_LEVEL(r->server, request_log_level))
-            ap_log_error(APLOG_MARK, request_log_level, 0, r->server, "post_read_request(): [%ld] forced to continue cause at least a trace uri matched (%s)", tid, trace_uri_matched);
-      }
-   }
-
-   // start building request access record part
-   if (APLOG_IS_LEVEL(r->server, request_log_level))
-      ap_log_error(APLOG_MARK, request_log_level, 0, r->server, "post_read_request(): [%ld] start building request access record part", tid);
-
-   // timestamp
-   std::chrono::sys_time<std::chrono::milliseconds> now { std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()) };
-   std::string timestamp = std::format("{0:%Y-%m-%d %H:%M:%S %Z}", std::chrono::zoned_time(std::chrono::current_zone(), now));
-   if (APLOG_IS_LEVEL(r->server, request_log_level))
-      ap_log_error(APLOG_MARK, request_log_level, 0, r->server, "post_read_request(): [%ld] timestamp = %s", tid, timestamp.c_str());
-
-   // Initialize request data
-   std::string request_data = format_string("\"**REQUEST**\"|\"%s\"|\"%s\"|\"%s\"|\"%s\"|\"%s://%s%s",
-                                            timestamp.c_str(), remote_ip, r->protocol, r->method,
-                                            scheme, host, r->uri);
-
-   if (r->args) request_data.append(format_string("?%s\"", r->args));
-   else request_data.append(1, '\"');
-
-   // get content type
-   const char *content_type = apr_table_get(r->headers_in, "Content-Type");
-   if (!content_type) content_type = "-";
-   if (APLOG_IS_LEVEL(r->server, request_log_level))
-      ap_log_error(APLOG_MARK, request_log_level, 0, r->server, "post_read_request(): [%ld] Content-Type = %s", tid, content_type);
-   const char *content_length = apr_table_get(r->headers_in, "Content-Length");
-   if (!content_length) content_length = "0";
-   if (APLOG_IS_LEVEL(r->server, request_log_level))
-      ap_log_error(APLOG_MARK, request_log_level, 0, r->server, "post_read_request(): [%ld] Content-Length = %s", tid, content_length);
-
-   // get transfer encoding
-   const char *transfer_encoding = apr_table_get(r->headers_in, "Transfer-Encoding");
-   if (!transfer_encoding) transfer_encoding = "-";
-   if (APLOG_IS_LEVEL(r->server, request_log_level))
-      ap_log_error(APLOG_MARK, request_log_level, 0, r->server, "post_read_request(): [%ld] Transfer-Encoding = %s", tid, transfer_encoding);
-
-   // auxiliary object
-   record_cpp record { request_data, conf };
-
-   // add headers
-   if (APLOG_IS_LEVEL(r->server, request_log_level))
-      ap_log_error(APLOG_MARK, request_log_level, 0, r->server, "post_read_request(): [%ld] print request headers ...", tid);
-   request_data.append(format_string("|\"HEADERS\"|\"WEBTRACKING-VERSION: %s\"", version));
-   if (!trace_uri) apr_table_do(log_headers_cpp, &record, r->headers_in, NULL);
-   else apr_table_do(log_headers_for_trace_cpp, &record, r->headers_in, NULL);
-
-   // print out cookies
-   if (APLOG_IS_LEVEL(r->server, request_log_level))
-   {
-      const char *cookies = apr_table_get(r->headers_in, "cookie");
-      if (cookies) ap_log_error(APLOG_MARK, request_log_level, 0, r->server, "post_read_request(): [%ld] cookie = %s", tid, cookies);
-   }
-
-   // add environment variable if enabled
-   if (APLOG_IS_LEVEL(r->server, request_log_level))
-      ap_log_error(APLOG_MARK, request_log_level, 0, r->server, "post_read_request(): [%ld] print environment variables ...", tid);
-   if (conf->envvar_table) apr_table_do(log_envvars_cpp, &record, r->subprocess_env, NULL);
+   uuid_temp.assign(format_string("%s:%s", conf->id, uuid_temp.c_str()));
+   if (APLOG_R_IS_LEVEL(r, request_log_level))
+      ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] uuid = %s", tid, uuid_temp.c_str());
 
    // append uuid to the request headers
-   apr_table_set(r->headers_in, conf->uuid_header, uuid);
+   char *uuid_for_request = new char[uuid_temp.length() + 1];
+   std::strcpy(uuid_for_request, uuid_temp.c_str());
+   apr_table_setn(r->headers_in, conf->uuid_header, uuid_for_request);
 
    // print out request data
-   if (APLOG_IS_LEVEL(r->server, request_log_level))
+   if (APLOG_R_IS_LEVEL(r, request_log_level))
    {
-      ap_log_error(APLOG_MARK, request_log_level, 0, r->server, "post_read_request(): [%ld] **** START END OF REQUEST ****", tid);
-      ap_log_error(APLOG_MARK, request_log_level, 0, r->server, "post_read_request(): [%ld] length: %lu - request_data: %s",
-                   tid, request_data.length(), request_data.c_str());
+      ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] **** START END OF REQUEST ****", tid);
+      ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] length: %lu - request_data: %s",
+                    tid, request_data.length(), request_data.c_str());
    }
 
    // save request data to a note
@@ -1155,121 +1146,127 @@ extern "C" int post_read_request_impl(request_rec *r)
    std::strcpy(data, request_data.c_str());
    apr_table_setn(r->notes, "request_data", data);
 
-   if (APLOG_IS_LEVEL(r->server, request_log_level))
+   // increment counter
+   apr_atomic_inc32(&conf->requests);
+   if (wt_counter) apr_atomic_inc32(&wt_counter->requests);   
+
+   if (APLOG_R_IS_LEVEL(r, request_log_level))
    {
-      ap_log_error(APLOG_MARK, request_log_level, 0, r->server, "post_read_request(): [%ld] data length = %lu",
+      ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] data length = %lu",
                    tid, strlen(data));
-      ap_log_error(APLOG_MARK, request_log_level, 0, r->server, "post_read_request(): [%ld] **** FINISH END OF REQUEST ****", tid);
+      ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] **** FINISH END OF REQUEST ****", tid);
    }
 
    // assess whether there is the need to enable a filter and prepare either one or both or none
-   bool input_filter = strcmp(r->method, "GET") != 0 && strcmp(r->method, "DELETE") != 0;
+   bool input_filter = std::strcmp(r->method, "GET") != 0 && std::strcmp(r->method, "DELETE") != 0;
    bool output_filter = true;
    bool output_header = !!conf->output_header_table;
 
    // print filter values out before checks
-   if (APLOG_IS_LEVEL(r->server, request_log_level))
+   if (APLOG_R_IS_LEVEL(r, request_log_level))
    {
-      ap_log_error(APLOG_MARK, request_log_level, 0, r->server, "post_read_request(): [%ld] before checks", tid);
-      ap_log_error(APLOG_MARK, request_log_level, 0, r->server, "post_read_request(): [%ld] input_filter = %s", tid, to_char(input_filter));
-      ap_log_error(APLOG_MARK, request_log_level, 0, r->server, "post_read_request(): [%ld] output_filter = %s", tid, to_char(output_filter));
-      ap_log_error(APLOG_MARK, request_log_level, 0, r->server, "post_read_request(): [%ld] output_header = %s", tid, to_char(output_header));
+      ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] before checks", tid);
+      ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] input_filter = %s", tid, to_char(input_filter));
+      ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] output_filter = %s", tid, to_char(output_filter));
+      ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] output_header = %s", tid, to_char(output_header));
    }
 
    // check whether we got an uri with excluded body
-   const char *exclude_uri_body_matched = search_regex_table(r->uri, conf->exclude_uri_body_table);
-   if (exclude_uri_body_matched)
+   if (const char *exclude_uri_body_matched = search_regex_table(r->uri, conf->exclude_uri_body_table);
+       exclude_uri_body_matched)
    {
-      if (APLOG_IS_LEVEL(r->server, request_log_level))
-         ap_log_error(APLOG_MARK, request_log_level, 0, r->server, "post_read_request(): [%ld] matched Exclude URI Body = %s", tid, exclude_uri_body_matched);
+      if (APLOG_R_IS_LEVEL(r, request_log_level))
+         ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] matched Exclude URI Body = %s", tid, exclude_uri_body_matched);
 
       if (!trace_uri)
       {
          input_filter = output_filter = false;
-         if (APLOG_IS_LEVEL(r->server, request_log_level))
-            ap_log_error(APLOG_MARK, request_log_level, 0, r->server, "post_read_request(): [%ld] the body tracking will be disabled", tid);
+         if (APLOG_R_IS_LEVEL(r, request_log_level))
+            ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] the body tracking will be disabled", tid);
       }
       else
       {
-         if (APLOG_IS_LEVEL(r->server, request_log_level))
-            ap_log_error(APLOG_MARK, request_log_level, 0, r->server, "post_read_request(): [%ld] forced to continue cause at least a trace uri matched (%s)", tid, trace_uri_matched);
+         if (APLOG_R_IS_LEVEL(r, request_log_level))
+            ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] forced to continue cause at least a trace uri matched (%s)", tid, trace_uri_matched);
       }
    }
 
    // check whether we got a POST uri with excluded body
-   if (input_filter && strcmp(r->method, "POST") == 0)
+   if (input_filter && std::strcmp(r->method, "POST") == 0)
    {
-      const char *exclude_uri_post_matched = search_regex_table(r->uri, conf->exclude_uri_post_table);
-      if (exclude_uri_post_matched)
+      if (const char *exclude_uri_post_matched = search_regex_table(r->uri, conf->exclude_uri_post_table);
+          exclude_uri_post_matched)
       {
-         if (APLOG_IS_LEVEL(r->server, request_log_level))
-            ap_log_error(APLOG_MARK, request_log_level, 0, r->server, "post_read_request(): [%ld] matched Exclude URI Post = %s", tid, exclude_uri_post_matched);
+         if (APLOG_R_IS_LEVEL(r, request_log_level))
+            ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] matched Exclude URI Post = %s", tid, exclude_uri_post_matched);
 
          if (!trace_uri)
          {
             input_filter = false;
-            if (APLOG_IS_LEVEL(r->server, request_log_level))
-               ap_log_error(APLOG_MARK, request_log_level, 0, r->server, "post_read_request(): [%ld] the body tracking will be disabled", tid);
+            if (APLOG_R_IS_LEVEL(r, request_log_level))
+               ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] the body tracking will be disabled", tid);
          }
          else
          {
-            if (APLOG_IS_LEVEL(r->server, request_log_level))
-               ap_log_error(APLOG_MARK, request_log_level, 0, r->server, "post_read_request(): [%ld] forced to continue cause at least a trace uri matched (%s)", tid, trace_uri_matched);
+            if (APLOG_R_IS_LEVEL(r, request_log_level))
+               ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] forced to continue cause at least a trace uri matched (%s)", tid, trace_uri_matched);
          }
       }
    }
+
+   // get content length
+   const char *content_length = apr_table_get(r->headers_in, "Content-Length");
+   if (!content_length) content_length = "0";
+   if (APLOG_R_IS_LEVEL(r, request_log_level))
+      ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] Content-Length = %s", tid, content_length);
 
    // is input filter enabled?
    unsigned long cl = std::stoul(content_length);
    if (input_filter)
    {
       unsigned long clinmb = cl / 1'048'576L;
-      if (APLOG_IS_LEVEL(r->server, request_log_level))
-         ap_log_error(APLOG_MARK, request_log_level, 0, r->server, "post_read_request(): [%ld] content length in MB = %lu", tid, clinmb);
+      if (APLOG_R_IS_LEVEL(r, request_log_level))
+         ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] content length in MB = %lu", tid, clinmb);
 
       // check whether the body length exceeds the body limit
       if (clinmb > conf->body_limit)
       {
-         if (APLOG_IS_LEVEL(r->server, request_log_level))
-            ap_log_error(APLOG_MARK, request_log_level, 0, r->server, "post_read_request(): [%ld] the content-length is greater than the body limit", tid);
+         if (APLOG_R_IS_LEVEL(r, request_log_level))
+            ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] the content-length is greater than the body limit", tid);
 
          if (!trace_uri)
          {
             input_filter = false;
-            if (APLOG_IS_LEVEL(r->server, request_log_level))
-               ap_log_error(APLOG_MARK, request_log_level, 0, r->server, "post_read_request(): [%ld] the request body tracking won't be enabled", tid);
+            if (APLOG_R_IS_LEVEL(r, request_log_level))
+               ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] the request body tracking won't be enabled", tid);
          }
          else
          {
-            if (APLOG_IS_LEVEL(r->server, request_log_level))
-               ap_log_error(APLOG_MARK, request_log_level, 0, r->server, "post_read_request(): [%ld] forced to continue cause at least a trace uri matched (%s)", tid, trace_uri_matched);
+            if (APLOG_R_IS_LEVEL(r, request_log_level))
+               ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] forced to continue cause at least a trace uri matched (%s)", tid, trace_uri_matched);
          }
       }
    }
 
    // print filter values out after some checks
-   if (APLOG_IS_LEVEL(r->server, request_log_level))
+   if (APLOG_R_IS_LEVEL(r, request_log_level))
    {
-      ap_log_error(APLOG_MARK, request_log_level, 0, r->server, "post_read_request(): [%ld] after checks", tid);
-      ap_log_error(APLOG_MARK, request_log_level, 0, r->server, "post_read_request(): [%ld] input_filter = %s", tid, to_char(input_filter));
-      ap_log_error(APLOG_MARK, request_log_level, 0, r->server, "post_read_request(): [%ld] output_filter = %s", tid, to_char(output_filter));
-      ap_log_error(APLOG_MARK, request_log_level, 0, r->server, "post_read_request(): [%ld] output_header = %s", tid, to_char(output_header));
+      ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] after checks", tid);
+      ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] input_filter = %s", tid, to_char(input_filter));
+      ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] output_filter = %s", tid, to_char(output_filter));
+      ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] output_header = %s", tid, to_char(output_header));
    }
-
-   // increment counter
-   apr_atomic_inc32(&conf->requests);
-   if (wt_counter) apr_atomic_inc32(&wt_counter->requests);
 
    if (input_filter || output_filter || output_header)
    {
       // output filter?
       if (output_filter || output_header)
       {
-         if (APLOG_IS_LEVEL(r->server, request_log_level))
-            ap_log_error(APLOG_MARK, request_log_level, 0, r->server, "post_read_request(): [%ld] prepare output filter data", tid);
+         if (APLOG_R_IS_LEVEL(r, request_log_level))
+            ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] prepare output filter data", tid);
 
          wt_output_filter_cpp *output_filter_ctx = new wt_output_filter_cpp;
-         output_filter_ctx->uuid.assign(uuid);
+         output_filter_ctx->uuid.assign(uuid_temp);
          output_filter_ctx->tid = tid;
          output_filter_ctx->uri.assign(r->uri);
          output_filter_ctx->trace_uri = trace_uri;
@@ -1280,12 +1277,12 @@ extern "C" int post_read_request_impl(request_rec *r)
          output_filter_ctx->output_filter = output_filter;
          output_filter_ctx->headers_found = false;
 
-         if (APLOG_IS_LEVEL(r->server, request_log_level))
+         if (APLOG_R_IS_LEVEL(r, request_log_level))
          {
             if (output_filter)
-               ap_log_error(APLOG_MARK, request_log_level, 0, r->server, "post_read_request(): [%ld] add WT_OUTPUT filter to read the response body", tid);
+               ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] add WT_OUTPUT filter to read the response body", tid);
             if (output_header)
-               ap_log_error(APLOG_MARK, request_log_level, 0, r->server, "post_read_request(): [%ld] add WT_OUTPUT filter to remove output headers", tid);
+               ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] add WT_OUTPUT filter to remove output headers", tid);
          }
 
          ap_add_output_filter("WT_OUTPUT", output_filter_ctx, r, r->connection);
@@ -1294,92 +1291,64 @@ extern "C" int post_read_request_impl(request_rec *r)
       // input filter?
       if (input_filter)
       {
-         if (APLOG_IS_LEVEL(r->server, request_log_level))
-            ap_log_error(APLOG_MARK, request_log_level, 0, r->server, "post_read_request(): [%ld] prepare input filter data", tid);
+         if (APLOG_R_IS_LEVEL(r, request_log_level))
+            ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] prepare input filter data", tid);
+
+         // get content type
+         const char *content_type = apr_table_get(r->headers_in, "Content-Type");
+         if (!content_type) content_type = "-";
+         if (APLOG_R_IS_LEVEL(r, request_log_level))
+            ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] Content-Type = %s", tid, content_type);
 
          // data
          wt_input_filter_cpp *input_filter_ctx = new wt_input_filter_cpp;
-         input_filter_ctx->uuid.assign(uuid);
+         input_filter_ctx->uuid.assign(uuid_temp);
          input_filter_ctx->tid = tid;
          input_filter_ctx->uri.assign(r->uri);
          input_filter_ctx->trace_uri = trace_uri;
          input_filter_ctx->conf = conf;
          input_filter_ctx->content_length_i = std::stoul(content_length);
          input_filter_ctx->content_type.assign(content_type);
-         input_filter_ctx->query_string = input_filter_ctx->content_type.starts_with("application/x-www-form-urlencoded") && strcmp(r->method, "POST") == 0;
+         input_filter_ctx->query_string = input_filter_ctx->content_type.starts_with("application/x-www-form-urlencoded") && std::strcmp(r->method, "POST") == 0;
          input_filter_ctx->start_i = 0;
          input_filter_ctx->elapsed = 0;
          input_filter_ctx->getline = 0;
 
          const char *transfer_encoding = apr_table_get(r->headers_in, "Transfer-Encoding");
          if (!transfer_encoding) transfer_encoding = "-";
-         if (strcmp(content_length, "0") || strstr(transfer_encoding, "chunked"))
+         if (cl > 0 || std::strstr(transfer_encoding, "chunked"))
          {
             if (input_filter_ctx->query_string)
             {
-               if (APLOG_IS_LEVEL(r->server, request_log_level))
+               if (APLOG_R_IS_LEVEL(r, request_log_level))
                {
-                  ap_log_error(APLOG_MARK, request_log_level, 0, r->server, "post_read_request(): [%ld] query string enabled (POST + application/x-www-form-urlencoded)", tid);
-                  ap_log_error(APLOG_MARK, request_log_level, 0, r->server, "post_read_request(): [%ld] add WT_INPUT filter to read the request body", tid);
+                  ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] query string enabled (POST + application/x-www-form-urlencoded)", tid);
+                  ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] add WT_INPUT filter to read the request body", tid);
                }
 
                if (cl > 0) input_filter_ctx->body.reserve(cl);
                ap_add_input_filter("WT_INPUT", input_filter_ctx, r, r->connection);
             }
-            else if (strcmp(content_type, "-"))
+            else if (std::strcmp(content_type, "-"))
             {
-               const char *ct_matched = search_regex_table(content_type, conf->content_table);
-               if (ct_matched)
+               if (const char *ct_matched = search_regex_table(content_type, conf->content_table);
+                   ct_matched)
                {
-                  if (APLOG_IS_LEVEL(r->server, request_log_level))
+                  if (APLOG_R_IS_LEVEL(r, request_log_level))
                   {
-                     ap_log_error(APLOG_MARK, request_log_level, 0, r->server, "post_read_request(): [%ld] matched Content-Type = %s", tid, ct_matched);
-                     ap_log_error(APLOG_MARK, request_log_level, 0, r->server, "post_read_request(): [%ld] add WT_INPUT filter to read the request body", tid);
+                     ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] matched Content-Type = %s", tid, ct_matched);
+                     ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] add WT_INPUT filter to read the request body", tid);
                   }
 
                   if (cl > 0) input_filter_ctx->body.reserve(cl);
                   ap_add_input_filter("WT_INPUT", input_filter_ctx, r, r->connection);
                }
-               else
+               else if (!std::strcmp(r->method, "POST") && conf->enable_post_body)
                {
-                  if (!strcmp(r->method, "POST") && conf->enable_post_body)
+                  if (APLOG_R_IS_LEVEL(r, request_log_level))
                   {
-                     if (APLOG_IS_LEVEL(r->server, request_log_level))
-                     {
-                        ap_log_error(APLOG_MARK, request_log_level, 0, r->server, "post_read_request(): [%ld] forced input filter cause post body enabled [%s]", tid, content_type);
-                        ap_log_error(APLOG_MARK, request_log_level, 0, r->server, "post_read_request(): [%ld] add WT_INPUT filter to read the request body", tid);
-                     }
-
-                     if (cl > 0) input_filter_ctx->body.reserve(cl);
-                     ap_add_input_filter("WT_INPUT", input_filter_ctx, r, r->connection);
-                  }
-                  else if (trace_uri)
-                  {
-                     if (APLOG_IS_LEVEL(r->server, request_log_level))
-                     {
-                        ap_log_error(APLOG_MARK, request_log_level, 0, r->server, "post_read_request(): [%ld] forced input filter cause at least a trace uri matched (%s) [%s]", tid, trace_uri_matched, content_type);
-                        ap_log_error(APLOG_MARK, request_log_level, 0, r->server, "post_read_request(): [%ld] add WT_INPUT filter to read the request body", tid);
-                     }
-                     
-                     if (cl > 0) input_filter_ctx->body.reserve(cl);
-                     ap_add_input_filter("WT_INPUT", input_filter_ctx, r, r->connection);
-                  }
-                  else
-                  {
-                     if (APLOG_IS_LEVEL(r->server, request_log_level))
-                        ap_log_error(APLOG_MARK, request_log_level, 0, r->server, "post_read_request(): [%ld] forced input_filter to false", tid);
-                     input_filter = false;
-                  }
-               }
-            }
-            else
-            {
-               if (!strcmp(r->method, "POST") && conf->enable_post_body)
-               {
-                  if (APLOG_IS_LEVEL(r->server, request_log_level))
-                  {
-                     ap_log_error(APLOG_MARK, request_log_level, 0, r->server, "post_read_request(): [%ld] forced input filter cause post body enabled (no content type)", tid);
-                     ap_log_error(APLOG_MARK, request_log_level, 0, r->server, "post_read_request(): [%ld] add WT_INPUT filter to read the request body", tid);
+                     ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] forced input filter cause post body enabled [%s]", tid, content_type);
+                     ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] add WT_INPUT filter to read the request body", tid);
                   }
 
                   if (cl > 0) input_filter_ctx->body.reserve(cl);
@@ -1387,10 +1356,41 @@ extern "C" int post_read_request_impl(request_rec *r)
                }
                else if (trace_uri)
                {
-                  if (APLOG_IS_LEVEL(r->server, request_log_level))
+                  if (APLOG_R_IS_LEVEL(r, request_log_level))
                   {
-                     ap_log_error(APLOG_MARK, request_log_level, 0, r->server, "post_read_request(): [%ld] forced input filter cause at least a trace uri matched (%s) (no content type)", tid, trace_uri_matched);
-                     ap_log_error(APLOG_MARK, request_log_level, 0, r->server, "post_read_request(): [%ld] add WT_INPUT filter to read the request body", tid);
+                     ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] forced input filter cause at least a trace uri matched (%s) [%s]", tid, trace_uri_matched, content_type);
+                     ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] add WT_INPUT filter to read the request body", tid);
+                  }
+                  
+                  if (cl > 0) input_filter_ctx->body.reserve(cl);
+                  ap_add_input_filter("WT_INPUT", input_filter_ctx, r, r->connection);
+               }
+               else
+               {
+                  if (APLOG_R_IS_LEVEL(r, request_log_level))
+                     ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] forced input_filter to false", tid);
+                  input_filter = false;
+               }
+            }
+            else
+            {
+               if (!std::strcmp(r->method, "POST") && conf->enable_post_body)
+               {
+                  if (APLOG_R_IS_LEVEL(r, request_log_level))
+                  {
+                     ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] forced input filter cause post body enabled (no content type)", tid);
+                     ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] add WT_INPUT filter to read the request body", tid);
+                  }
+
+                  if (cl > 0) input_filter_ctx->body.reserve(cl);
+                  ap_add_input_filter("WT_INPUT", input_filter_ctx, r, r->connection);
+               }
+               else if (trace_uri)
+               {
+                  if (APLOG_R_IS_LEVEL(r, request_log_level))
+                  {
+                     ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] forced input filter cause at least a trace uri matched (%s) (no content type)", tid, trace_uri_matched);
+                     ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] add WT_INPUT filter to read the request body", tid);
                   }
 
                   if (cl > 0) input_filter_ctx->body.reserve(cl);
@@ -1398,18 +1398,21 @@ extern "C" int post_read_request_impl(request_rec *r)
                }
                else
                {
-                  if (APLOG_IS_LEVEL(r->server, request_log_level))
-                     ap_log_error(APLOG_MARK, request_log_level, 0, r->server, "post_read_request(): [%ld] forced input_filter to false", tid);
+                  if (APLOG_R_IS_LEVEL(r, request_log_level))
+                     ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] forced input_filter to false", tid);
                   input_filter = false;
                }
             }
          }
          else
          {
-            if (APLOG_IS_LEVEL(r->server, request_log_level))
-               ap_log_error(APLOG_MARK, request_log_level, 0, r->server, "post_read_request(): [%ld] Content-Length = 0 and no Transfer-Encoding = chunked is present, forced input_filter to false", tid);
+            if (APLOG_R_IS_LEVEL(r, request_log_level))
+               ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] Content-Length = 0 and no Transfer-Encoding = chunked is present, forced input_filter to false", tid);
             input_filter = false;
          }
+
+         // free memory if input filter is false
+         if (!input_filter) delete input_filter_ctx;
       }
    }
 
@@ -1417,10 +1420,10 @@ extern "C" int post_read_request_impl(request_rec *r)
    module_overhead_for_current_request = elapsed;
 
    // Exit
-   if (APLOG_IS_LEVEL(r->server, request_log_level))
+   if (APLOG_R_IS_LEVEL(r, request_log_level))
    {
       std::string elapsed_s { to_string(elapsed) };
-      ap_log_error(APLOG_MARK, request_log_level, 0, r->server, "post_read_request(): [%ld] end (OK) - %s", tid, elapsed_s.c_str());
+      ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] end (OK) - %s", tid, elapsed_s.c_str());
    }
 
    return OK;
@@ -1434,14 +1437,14 @@ extern "C" int log_transaction_impl(request_rec *r)
    const char *host = apr_table_get(r->headers_in, "Host");
    if (!host) host = r->hostname;
 
-   if (APLOG_IS_LEVEL(r->server, request_log_level))
+   if (APLOG_R_IS_LEVEL(r, request_log_level))
    {
-      ap_log_error(APLOG_MARK, request_log_level, 0, r->server, "log_transaction(): [%ld] start", tid);
-      ap_log_error(APLOG_MARK, request_log_level, 0, r->server, "log_transaction(): [%ld] Method = %s", tid, r->method);
-      ap_log_error(APLOG_MARK, request_log_level, 0, r->server, "log_transaction(): [%ld] Host = %s", tid, host);
-      ap_log_error(APLOG_MARK, request_log_level, 0, r->server, "log_transaction(): [%ld] URI = %s", tid, r->uri);
-      ap_log_error(APLOG_MARK, request_log_level, 0, r->server, "log_transaction(): [%ld] Protocol = %s", tid, r->protocol);
-      ap_log_error(APLOG_MARK, request_log_level, 0, r->server, "log_transaction(): [%ld] status = %s", tid, r->status_line);
+      ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "log_transaction(): [%ld] start", tid);
+      ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "log_transaction(): [%ld] Method = %s", tid, r->method);
+      ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "log_transaction(): [%ld] Host = %s", tid, host);
+      ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "log_transaction(): [%ld] URI = %s", tid, r->uri);
+      ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "log_transaction(): [%ld] Protocol = %s", tid, r->protocol);
+      ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "log_transaction(): [%ld] status = %s", tid, r->status_line);
    }
 
    // start timestamp
@@ -1453,9 +1456,8 @@ extern "C" int log_transaction_impl(request_rec *r)
    // internal redirect?
    if (r->prev)
    {
-
-      if (APLOG_IS_LEVEL(r->server, request_log_level))
-         ap_log_error(APLOG_MARK, request_log_level, 0, r->server, "log_transaction(): [%ld] end (DECLINED)", tid);
+      if (APLOG_R_IS_LEVEL(r, request_log_level))
+         ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "log_transaction(): [%ld] end (DECLINED)", tid);
 
       return DECLINED;
    }
@@ -1464,9 +1466,9 @@ extern "C" int log_transaction_impl(request_rec *r)
    {
       if (APLOG_R_IS_LEVEL(r, request_log_level))
       {
-         std::string elapsed{to_string(apr_time_now() - start)};
-         ap_log_error(APLOG_MARK, request_log_level, 0, r->server, "log_transaction(): [%ld] useless to do anything since there isn't any configured record file", tid);
-         ap_log_error(APLOG_MARK, request_log_level, 0, r->server, "log_transaction(): [%ld] end (OK) - %s", tid, elapsed.c_str());
+         std::string elapsed { to_string(apr_time_now() - start) };
+         ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "log_transaction(): [%ld] useless to do anything since there isn't any configured record file", tid);
+         ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "log_transaction(): [%ld] end (OK) - %s", tid, elapsed.c_str());
       }
 
       return OK;
@@ -1474,24 +1476,24 @@ extern "C" int log_transaction_impl(request_rec *r)
 
    // get uuid
    const char *uuid;
-   if (APLOG_IS_LEVEL(r->server, request_log_level))
-      ap_log_error(APLOG_MARK, request_log_level, 0, r->server, "log_transaction(): [%ld] retrieve uuid", tid);
+   if (APLOG_R_IS_LEVEL(r, request_log_level))
+      ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "log_transaction(): [%ld] retrieve uuid", tid);
 
    uuid = apr_table_get(r->headers_in, conf->uuid_header);
    if (!uuid)
    {
-      if (APLOG_IS_LEVEL(r->server, request_log_level))
+      if (APLOG_R_IS_LEVEL(r, request_log_level))
       {
-         std::string elapsed{to_string(apr_time_now() - start)};
-         ap_log_error(APLOG_MARK, request_log_level, 0, r->server, "log_transaction(): [%ld] uuid is NULL, so the web tracking is disabled for this request", tid);
-         ap_log_error(APLOG_MARK, request_log_level, 0, r->server, "log_transaction(): [%ld] end (OK) - %s", tid, elapsed.c_str());
+         std::string elapsed { to_string(apr_time_now() - start) };
+         ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "log_transaction(): [%ld] uuid is NULL, so the web tracking is disabled for this request", tid);
+         ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "log_transaction(): [%ld] end (OK) - %s", tid, elapsed.c_str());
       }
 
       return OK;
    }
 
-   if (APLOG_IS_LEVEL(r->server, request_log_level))
-      ap_log_error(APLOG_MARK, request_log_level, 0, r->server, "log_transaction(): [%ld] uuid = %s", tid, uuid);
+   if (APLOG_R_IS_LEVEL(r, request_log_level))
+      ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "log_transaction(): [%ld] uuid = %s", tid, uuid);
 
    // Initialize response data
    std::string response_data{"\"**RESPONSE**\"|"};
@@ -1499,67 +1501,72 @@ extern "C" int log_transaction_impl(request_rec *r)
    // status code and elapsed time
    std::string elapsed = to_string(start - r->request_time);
    response_data.append(format_string("\"%d\"|\"%d\"|\"%s\"", r->status, start - r->request_time, elapsed.c_str()));
-   if (APLOG_IS_LEVEL(r->server, request_log_level))
-      ap_log_error(APLOG_MARK, request_log_level, 0, r->server, "log_transaction(): [%ld] elapsed time = %s", tid, elapsed.c_str());
+   if (APLOG_R_IS_LEVEL(r, request_log_level))
+      ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "log_transaction(): [%ld] elapsed time = %s", tid, elapsed.c_str());
 
    // complete response prefix
    response_data.append(format_string("|\"%ld\"|\"%ld\"|\"HEADERS\"", r->read_length, r->bytes_sent));
 
    // auxiliary object
-   record_cpp record{response_data, conf};
+   record_cpp record { response_data, conf };
 
    // add header
-   const char *trace_uri_matched = search_regex_table(r->uri, conf->trace_uri_table);
-   if (!trace_uri_matched)
+   if (const char *trace_uri_matched = search_regex_table(r->uri, conf->trace_uri_table);
+       !trace_uri_matched)
    {
       apr_table_do(log_headers_cpp, &record, r->headers_out, NULL);
    }
    else
    {
-      if (APLOG_IS_LEVEL(r->server, request_log_level))
-         ap_log_error(APLOG_MARK, request_log_level, 0, r->server, "log_transaction(): [%ld] matched Trace URI = %s", tid, trace_uri_matched);
+      if (APLOG_R_IS_LEVEL(r, request_log_level))
+         ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "log_transaction(): [%ld] matched Trace URI = %s", tid, trace_uri_matched);
       apr_table_do(log_headers_for_trace_cpp, &record, r->headers_out, NULL);
    }
 
    // print out cookies
-   if (APLOG_IS_LEVEL(r->server, request_log_level))
+   if (APLOG_R_IS_LEVEL(r, request_log_level))
    {
       const char *cookies = apr_table_get(r->headers_out, "set-cookie");
-      if (cookies) ap_log_error(APLOG_MARK, request_log_level, 0, r->server, "log_transaction(): [%ld] set-cookie = %s", tid, cookies);
+      if (cookies) ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "log_transaction(): [%ld] set-cookie = %s", tid, cookies);
    }
 
    // add environment variable if enabled
-   if (APLOG_IS_LEVEL(r->server, request_log_level))
-      ap_log_error(APLOG_MARK, request_log_level, 0, r->server, "log_transaction(): [%ld] print environment variables ...", tid);
-   if (conf->envvar_table)
-      apr_table_do(log_envvars_cpp, &record, r->subprocess_env, NULL);
+   if (APLOG_R_IS_LEVEL(r, request_log_level))
+      ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "log_transaction(): [%ld] print environment variables ...", tid);
+   if (conf->envvar_table) apr_table_do(log_envvars_cpp, &record, r->subprocess_env, NULL);
 
-   if (APLOG_IS_LEVEL(r->server, request_log_level))
-      ap_log_error(APLOG_MARK, request_log_level, 0, r->server, "log_transaction(): [%ld] **** START END OF RESPONSE ****", tid);
+   if (APLOG_R_IS_LEVEL(r, request_log_level))
+      ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "log_transaction(): [%ld] **** START END OF RESPONSE ****", tid);
 
    // retrieve appid
-   const char *appid = 0;
-   if (conf->appid_header) appid = apr_table_get(r->headers_out, conf->appid_header);
+   const char *appid = nullptr;
+   
+   if (conf->appid_header)
+   {
+      appid = apr_table_get(r->headers_out, conf->appid_header);
+   }
+   
    if (!appid)
    {
       // retrieve appid from directives
-      appid = "";
-      if (APLOG_IS_LEVEL(r->server, request_log_level))
-         ap_log_error(APLOG_MARK, request_log_level, 0, r->server, "log_transaction(): [%ld] retrieve application id from directives", tid);
+      if (APLOG_R_IS_LEVEL(r, request_log_level))
+         ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "log_transaction(): [%ld] retrieve application id from directives", tid);
 
-      uri_table_t *t = search_uri_table(conf->appid_table, host, r->uri);
-      if (t) appid = t->value;
+      if (uri_table_t *t = search_uri_table(conf->appid_table, host, r->uri); t) appid = t->value;
    }
 
+   // still nothing?
+   if (!appid) appid = "N/A";
+
    // print out appid
-   if (APLOG_IS_LEVEL(r->server, request_log_level))
-      ap_log_error(APLOG_MARK, request_log_level, 0, r->server, "log_transaction(): [%ld] appid = [%s]", tid, appid);
+   if (APLOG_R_IS_LEVEL(r, request_log_level))
+      ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "log_transaction(): [%ld] appid = [%s]", tid, appid);
 
    // print out response data
-   if (APLOG_IS_LEVEL(r->server, request_log_level))
+   if (APLOG_R_IS_LEVEL(r, request_log_level))
    {
-      ap_log_error(APLOG_MARK, request_log_level, 0, r->server, "log_transaction(): [%ld] length: %lu - response_data: %s",
-                   tid, response_data.length(), response_data.c_str());
+      ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "log_transaction(): [%ld] length: %lu - response_data: %s",
+                    tid, response_data.length(), response_data.c_str());
    }
 
    // increment counter
@@ -1574,36 +1581,36 @@ extern "C" int log_transaction_impl(request_rec *r)
    // Check body presence
    bool has_request_body = !!request_body_data;
    bool has_response_body = !!response_body_data;
-   if (APLOG_IS_LEVEL(r->server, request_log_level))
-      ap_log_error(APLOG_MARK, request_log_level, 0, r->server, "log_transaction(): [%ld] request_body = %s, response_body = %s", tid, to_char(has_request_body), to_char(has_response_body));
+   if (APLOG_R_IS_LEVEL(r, request_log_level))
+      ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "log_transaction(): [%ld] request_body = %s, response_body = %s", tid, to_char(has_request_body), to_char(has_response_body));
 
    // request data is valid?
    if (request_data)
    {
-      if (APLOG_IS_LEVEL(r->server, request_log_level))
+      if (APLOG_R_IS_LEVEL(r, request_log_level))
       {
-         ap_log_error(APLOG_MARK, request_log_level, 0, r->server, "log_transaction(): [%ld] write final record appending all parts", tid);
-         ap_log_error(APLOG_MARK, request_log_level, 0, r->server, "log_transaction(): [%ld] request_data length = %lu", tid, strlen(request_data));
+         ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "log_transaction(): [%ld] write final record appending all parts", tid);
+         ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "log_transaction(): [%ld] request_data length = %lu", tid, strlen(request_data));
          if (has_request_body)
-            ap_log_error(APLOG_MARK, request_log_level, 0, r->server, "log_transaction(): [%ld] request_body_data length = %lu",
+            ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "log_transaction(): [%ld] request_body_data length = %lu",
                          tid, strlen(request_body_data));
-         ap_log_error(APLOG_MARK, request_log_level, 0, r->server, "log_transaction(): [%ld] response_data length = %lu", tid, response_data.length());
+         ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "log_transaction(): [%ld] response_data length = %lu", tid, response_data.length());
          if (has_response_body)
-            ap_log_error(APLOG_MARK, request_log_level, 0, r->server, "log_transaction(): [%ld] response_body_data length = %lu",
+            ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "log_transaction(): [%ld] response_body_data length = %lu",
                          tid, strlen(response_body_data));
       }
 
       // create record prefix with uuid and appid
-      if (APLOG_IS_LEVEL(r->server, request_log_level))
-         ap_log_error(APLOG_MARK, request_log_level, 0, r->server, "log_transaction(): [%ld] uuid = %s, appid = %s", tid, uuid, appid);
+      if (APLOG_R_IS_LEVEL(r, request_log_level))
+         ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "log_transaction(): [%ld] uuid = %s, appid = %s", tid, uuid, appid);
 
       // create record data
 
       // timestamp, uuid, appid and request
       std::chrono::sys_time<std::chrono::milliseconds> now{std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch())};
       std::string timestamp = std::format("{0:%Y-%m-%d %H:%M:%S %Z}", std::chrono::zoned_time(std::chrono::current_zone(), now));
-      if (APLOG_IS_LEVEL(r->server, request_log_level))
-         ap_log_error(APLOG_MARK, request_log_level, 0, r->server, "log_transaction(): [%ld] timestamp = %s", tid, timestamp.c_str());
+      if (APLOG_R_IS_LEVEL(r, request_log_level))
+         ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "log_transaction(): [%ld] timestamp = %s", tid, timestamp.c_str());
 
       std::string record_data = format_string("\"%s\"|\"%s\"|\"%s\"|%s", timestamp.c_str(), uuid, appid, request_data);
       delete[] request_data;
@@ -1628,8 +1635,8 @@ extern "C" int log_transaction_impl(request_rec *r)
          apr_table_unset(r->notes, "response_body_data");
       }
 
-      if (APLOG_IS_LEVEL(r->server, request_log_level))
-         ap_log_error(APLOG_MARK, request_log_level, 0, r->server, "log_transaction(): [%ld] record_data length = %lu", tid, record_data.length());
+      if (APLOG_R_IS_LEVEL(r, request_log_level))
+         ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "log_transaction(): [%ld] record_data length = %lu", tid, record_data.length());
 
       // lock types
       auto apr_anylock_none = apr_anylock_t::apr_anylock_none;               /* None */
@@ -1642,11 +1649,11 @@ extern "C" int log_transaction_impl(request_rec *r)
       auto write_start = apr_time_now();
 
       // write to file
-      apr_status_t rtl = APR_ANYLOCK_LOCK(&conf->record_thread_mutex);
-      if (rtl == APR_SUCCESS)
+      if (apr_status_t rtl = APR_ANYLOCK_LOCK(&conf->record_thread_mutex); 
+          rtl == APR_SUCCESS)
       {
          // write record log data
-         bool ok = wt_record_write(record_data);
+         bool is_write_ok = wt_record_write(record_data);
 
          // release all locks
          APR_ANYLOCK_UNLOCK(&conf->record_thread_mutex);
@@ -1656,7 +1663,7 @@ extern "C" int log_transaction_impl(request_rec *r)
          module_overhead_for_current_request += write_end - start;
 
          // print out record log data outcome
-         if (ok)
+         if (is_write_ok)
          {
             if (APLOG_IS_LEVEL(r->server, APLOG_INFO))
             {
@@ -1668,8 +1675,8 @@ extern "C" int log_transaction_impl(request_rec *r)
                                                                   record_data.length(), elapsed_w.c_str());
             }
             
-            if (APLOG_IS_LEVEL(r->server, request_log_level))
-               ap_log_error(APLOG_MARK, request_log_level, 0, r->server, "log_transaction(): [%ld] successfully written %lu chars", tid, record_data.length());
+            if (APLOG_R_IS_LEVEL(r, request_log_level))
+               ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "log_transaction(): [%ld] successfully written %lu chars", tid, record_data.length());
          }
          else
          {
@@ -1689,23 +1696,41 @@ extern "C" int log_transaction_impl(request_rec *r)
       }
       else
       {
-         char error[1024];
-         apr_strerror(rtl, error, 1024);
          if (APLOG_IS_LEVEL(r->server, APLOG_ALERT))
-            ap_log_error(APLOG_MARK, APLOG_ALERT, 0, r->server, "ALERT: Record with uuid = %s failed to acquire a cross-thread lock (err: %s)", uuid, error);
+            ap_log_error(APLOG_MARK, APLOG_ALERT, rtl, r->server, "ALERT: Record with uuid = %s failed to acquire a cross-thread lock", uuid);
       }
+
+      // uuid
+      delete[] uuid;
    }
    else
    {
-      if (APLOG_IS_LEVEL(r->server, request_log_level))
-         ap_log_error(APLOG_MARK, request_log_level, 0, r->server, "log_transaction(): [%ld] request data is NULL!! Nothing to do!", tid);
+      if (APLOG_R_IS_LEVEL(r, request_log_level))
+         ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "log_transaction(): [%ld] request data is NULL!! Nothing to do!", tid);
+      
+      // request body
+      if (has_request_body)
+      {
+         delete[] request_body_data;
+         apr_table_unset(r->notes, "request_body_data");
+      }
+
+      // response body
+      if (has_response_body)
+      {
+         delete[] response_body_data;
+         apr_table_unset(r->notes, "response_body_data");
+      }
+
+      // uuid
+      delete[] uuid;
    }
 
    // Exit
-   if (APLOG_IS_LEVEL(r->server, request_log_level))
+   if (APLOG_R_IS_LEVEL(r, request_log_level))
    {
       std::string elapsed { to_string(apr_time_now() - start) };
-      ap_log_error(APLOG_MARK, request_log_level, 0, r->server, "log_transaction(): [%ld] end (OK) - %s", tid, elapsed.c_str());
+      ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "log_transaction(): [%ld] end (OK) - %s", tid, elapsed.c_str());
    }
 
    return OK;
@@ -1719,53 +1744,57 @@ extern "C" int wt_input_filter_impl(ap_filter_t *f, apr_bucket_brigade *bb, ap_i
    const char *host = apr_table_get(f->r->headers_in, "Host");
    if (!host) host = f->r->hostname;
 
-   if (APLOG_C_IS_LEVEL(f->c, request_log_level))
+   if (APLOG_R_IS_LEVEL(f->r, request_log_level))
    {
-      ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_input_filter(): [%ld] start", tid);
-      ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_input_filter(): [%ld] readbytes = %ld", tid, readbytes);
+      ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_input_filter(): [%ld] start", tid);
+      ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_input_filter(): [%ld] readbytes = %ld", tid, readbytes);
    }
 
    if (mode == AP_MODE_EXHAUSTIVE)
    {
-      if (APLOG_C_IS_LEVEL(f->c, request_log_level))
+      if (APLOG_R_IS_LEVEL(f->r, request_log_level))
       {
-         ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_input_filter(): [%ld] mode = AP_MODE_EXHAUSTIVE", tid);
-         ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_input_filter(): [%ld] end (ap_get_brigade)", tid);
+         ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_input_filter(): [%ld] mode = AP_MODE_EXHAUSTIVE", tid);
+         ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_input_filter(): [%ld] end (ap_get_brigade)", tid);
       }
 
       return ap_get_brigade(f->next, bb, mode, block, readbytes);
    }
    else if (mode == AP_MODE_GETLINE)
    {
-      if (APLOG_C_IS_LEVEL(f->c, request_log_level))
-         ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_input_filter(): [%ld] mode = AP_MODE_GETLINE", tid);
+      if (APLOG_R_IS_LEVEL(f->r, request_log_level))
+         ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_input_filter(): [%ld] mode = AP_MODE_GETLINE", tid);
 
       wt_input_filter_cpp *ctx = static_cast<wt_input_filter_cpp *>(f->ctx);
 
       if (!ctx)
       {
-         if (APLOG_C_IS_LEVEL(f->c, request_log_level))
+         if (APLOG_R_IS_LEVEL(f->r, request_log_level))
          {
-            ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_input_filter(): [%ld] the filter context is null!", tid);
-            ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_input_filter(): [%ld] end (ap_get_brigade)", tid);
+            ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_input_filter(): [%ld] the filter context is null!", tid);
+            ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_input_filter(): [%ld] end (ap_get_brigade)", tid);
          }
 
          return ap_get_brigade(f->next, bb, mode, block, readbytes);
       }
 
-      if (APLOG_C_IS_LEVEL(f->c, request_log_level))
+      if (APLOG_R_IS_LEVEL(f->r, request_log_level))
       {
-         ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_input_filter(): [%ld] URI = %s", tid, ctx->uri.c_str());
-         ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_input_filter(): [%ld] uuid = %s", tid, ctx->uuid.c_str());
+         ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_input_filter(): [%ld] URI = %s", tid, ctx->uri.c_str());
+         ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_input_filter(): [%ld] uuid = %s", tid, ctx->uuid.c_str());
       }
 
       if (ctx->tid != tid)
       {
-         if (APLOG_C_IS_LEVEL(f->c, request_log_level))
+         if (APLOG_R_IS_LEVEL(f->r, request_log_level))
          {
-            ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_input_filter(): [%ld] the current thread id doesn't match the request thread id (%ld)", tid, ctx->tid);
-            ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_input_filter(): [%ld] end (ap_get_brigade)", tid);
+            ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_input_filter(): [%ld] the current thread id doesn't match the request thread id (%ld)", tid, ctx->tid);
+            ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_input_filter(): [%ld] end (ap_get_brigade)", tid);
          }
+
+         // delete input filter context
+         delete ctx;
+         f->ctx = nullptr;
 
          return ap_get_brigade(f->next, bb, mode, block, readbytes);
       }
@@ -1775,11 +1804,11 @@ extern "C" int wt_input_filter_impl(ap_filter_t *f, apr_bucket_brigade *bb, ap_i
          apr_time_t start_filter = apr_time_now();
          if (ctx->start_i == 0) ctx->start_i = start_filter;
 
-         if (APLOG_C_IS_LEVEL(f->c, request_log_level))
+         if (APLOG_R_IS_LEVEL(f->r, request_log_level))
          {
-            ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_input_filter(): [%ld] **** START END OF REQUEST BODY ****", tid);
-            ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_input_filter(): [%ld] read all bytes (transfer-encoding chunked)", tid);
-            ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_input_filter(): [%ld] total bytes read = %ld", tid, ctx->body.length());
+            ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_input_filter(): [%ld] **** START END OF REQUEST BODY (AP_MODE_GETLINE) ****", tid);
+            ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_input_filter(): [%ld] read all bytes (transfer-encoding chunked)", tid);
+            ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_input_filter(): [%ld] total bytes read = %ld", tid, ctx->body.length());
          }
 
          if (ctx->conf->log_enabled)
@@ -1787,44 +1816,44 @@ extern "C" int wt_input_filter_impl(ap_filter_t *f, apr_bucket_brigade *bb, ap_i
             if (ctx->query_string)
             {
                // Add as a query string and not as a request body
-               if (APLOG_C_IS_LEVEL(f->c, request_log_level))
-                  ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_input_filter(): [%ld] scan for query string parameters to be removed ...", tid);
+               if (APLOG_R_IS_LEVEL(f->r, request_log_level))
+                  ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_input_filter(): [%ld] scan for query string parameters to be removed ...", tid);
 
-               if (APLOG_C_IS_LEVEL(f->c, request_log_level))
-                  ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_input_filter(): [%ld] body = %s", tid, ctx->body.c_str());
+               if (APLOG_R_IS_LEVEL(f->r, request_log_level))
+                  ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_input_filter(): [%ld] body = %s", tid, ctx->body.c_str());
 
                for (auto &parameter_re : parameters_re)
                {
                   try
                   {
-                     std::smatch match;
-                     if (std::regex_search(ctx->body, match, parameter_re))
+                     if (std::smatch match;
+                        std::regex_search(ctx->body, match, parameter_re))
                      {                  
-                        if (APLOG_C_IS_LEVEL(f->c, request_log_level))
-                           ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_input_filter(): [%ld] found a query string parameter to be removed", tid);
+                        if (APLOG_R_IS_LEVEL(f->r, request_log_level))
+                           ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_input_filter(): [%ld] found a query string parameter to be removed", tid);
                            
                         // remove header
                         ctx->body.erase(match.position(), match.length());
                
-                        if (APLOG_C_IS_LEVEL(f->c, request_log_level))
-                           ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_output_filter(): [%ld] removed query string parameter, new body length = %ld", tid, ctx->body.length());
+                        if (APLOG_R_IS_LEVEL(f->r, request_log_level))
+                           ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_output_filter(): [%ld] removed query string parameter, new body length = %ld", tid, ctx->body.length());
                      }
                   }
                
                   catch (const std::exception &e)
                   {
-                     if (APLOG_C_IS_LEVEL(f->c, request_log_level))
-                           ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_output_filter(): [%ld] search for query string parameters failed because of %s", tid, e.what());
+                     if (APLOG_R_IS_LEVEL(f->r, request_log_level))
+                           ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_output_filter(): [%ld] search for query string parameters failed because of %s", tid, e.what());
                   }
                }
 
-               if (APLOG_C_IS_LEVEL(f->c, request_log_level))
-                  ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_input_filter(): [%ld] scan for query string parameters to be removed done", tid);
+               if (APLOG_R_IS_LEVEL(f->r, request_log_level))
+                  ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_input_filter(): [%ld] scan for query string parameters to be removed done", tid);
 
                if (!ctx->body.empty())
                {
-                  if (APLOG_C_IS_LEVEL(f->c, request_log_level))
-                     ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_input_filter(): [%ld] body = %s", tid, ctx->body.c_str());
+                  if (APLOG_R_IS_LEVEL(f->r, request_log_level))
+                     ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_input_filter(): [%ld] body = %s", tid, ctx->body.c_str());
 
                   // Add the query string as header "*Post"
                   std::string request_body_data { "*Post: " + ctx->body };
@@ -1832,13 +1861,13 @@ extern "C" int wt_input_filter_impl(ap_filter_t *f, apr_bucket_brigade *bb, ap_i
                   std::strcpy(data, request_body_data.c_str());
                   apr_table_setn(f->r->notes, "request_body_data", data);
 
-                  if (APLOG_C_IS_LEVEL(f->c, request_log_level))
-                     ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_input_filter(): [%ld] final query string parameters = %s", tid, data);
+                  if (APLOG_R_IS_LEVEL(f->r, request_log_level))
+                     ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_input_filter(): [%ld] final query string parameters = %s", tid, data);
                }
                else
                {
-                  if (APLOG_C_IS_LEVEL(f->c, request_log_level))
-                     ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_input_filter(): [%ld] final query string parameters is empty", tid);
+                  if (APLOG_R_IS_LEVEL(f->r, request_log_level))
+                     ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_input_filter(): [%ld] final query string parameters is empty", tid);
                }
             }
             else
@@ -1846,9 +1875,9 @@ extern "C" int wt_input_filter_impl(ap_filter_t *f, apr_bucket_brigade *bb, ap_i
                // BASE64 encoding
                apr_time_t start_b64 = apr_time_now();
                std::string record_b64 = base64encode(ctx->body);
-               if (APLOG_C_IS_LEVEL(f->c, request_log_level))
-                  ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_input_filter(): [%ld] BASE64 encoding elapsed time = %s",
-                              tid, to_string(apr_time_now() - start_b64).c_str());
+               if (APLOG_R_IS_LEVEL(f->r, request_log_level))
+                  ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_input_filter(): [%ld] BASE64 encoding elapsed time = %s",
+                                tid, to_string(apr_time_now() - start_b64).c_str());
 
                // request body data
                std::string request_body_data { "\"**REQUEST_BODY**\"|" + record_b64 };
@@ -1859,12 +1888,12 @@ extern "C" int wt_input_filter_impl(ap_filter_t *f, apr_bucket_brigade *bb, ap_i
          }
          else
          {
-            if (APLOG_C_IS_LEVEL(f->c, request_log_level))
-               ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_input_filter(): [%ld] nothing to save since there isn't a configured access file", tid);
+            if (APLOG_R_IS_LEVEL(f->r, request_log_level))
+               ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_input_filter(): [%ld] nothing to save since there isn't a configured access file", tid);
          }
 
-         if (APLOG_C_IS_LEVEL(f->c, request_log_level))
-            ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_input_filter(): [%ld] **** FINISH END OF REQUEST BODY ****", tid);
+         if (APLOG_R_IS_LEVEL(f->r, request_log_level))
+            ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_input_filter(): [%ld] **** FINISH END OF REQUEST BODY ****", tid);
 
          // increment counter
          apr_atomic_inc32(&ctx->conf->request_bodies);
@@ -1877,10 +1906,10 @@ extern "C" int wt_input_filter_impl(ap_filter_t *f, apr_bucket_brigade *bb, ap_i
          // update module overhead for request
          module_overhead_for_current_request += ctx->elapsed;
 
-         if (APLOG_C_IS_LEVEL(f->c, request_log_level))
+         if (APLOG_R_IS_LEVEL(f->r, request_log_level))
          {
             apr_time_t elapsed = end_filter - ctx->start_i;
-            ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_input_filter(): [%ld] ELAPSED TIMES: total = %s, filter = %s",
+            ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_input_filter(): [%ld] ELAPSED TIMES: total = %s, filter = %s",
                           tid, to_string(elapsed).c_str(), to_string(ctx->elapsed).c_str());
          }
 
@@ -1890,82 +1919,93 @@ extern "C" int wt_input_filter_impl(ap_filter_t *f, apr_bucket_brigade *bb, ap_i
       }
       else
       {
-         if (APLOG_C_IS_LEVEL(f->c, request_log_level))
-            ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_input_filter(): [%ld] call to getline = %d", tid, ctx->getline);
+         if (APLOG_R_IS_LEVEL(f->r, request_log_level))
+            ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_input_filter(): [%ld] mode = AP_MODE_GETLINE, count = %d", tid, ctx->getline);
+
+         if (ctx->getline == 3)
+         {
+            // Delete active filter context
+            delete ctx;
+            f->ctx = nullptr;
+         }
       }
 
-      if (APLOG_C_IS_LEVEL(f->c, request_log_level))
-         ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_input_filter(): [%ld] end (ap_get_brigade)", tid);
+      if (APLOG_R_IS_LEVEL(f->r, request_log_level))
+         ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_input_filter(): [%ld] end (ap_get_brigade)", tid);
 
       return ap_get_brigade(f->next, bb, mode, block, readbytes);
    }
    else if (mode == AP_MODE_EATCRLF)
    {
-      if (APLOG_C_IS_LEVEL(f->c, request_log_level))
+      if (APLOG_R_IS_LEVEL(f->r, request_log_level))
       {
-         ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_input_filter(): [%ld] mode = AP_MODE_EATCRLF", tid);
-         ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_input_filter(): [%ld] end (ap_get_brigade)", tid);
+         ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_input_filter(): [%ld] mode = AP_MODE_EATCRLF", tid);
+         ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_input_filter(): [%ld] end (ap_get_brigade)", tid);
       }
 
       return ap_get_brigade(f->next, bb, mode, block, readbytes);
    }
    else if (mode == AP_MODE_SPECULATIVE)
    {
-      if (APLOG_C_IS_LEVEL(f->c, request_log_level))
+      if (APLOG_R_IS_LEVEL(f->r, request_log_level))
       {
-         ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_input_filter(): [%ld] mode = AP_MODE_SPECULATIVE", tid);
-         ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_input_filter(): [%ld] end (ap_get_brigade)", tid);
+         ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_input_filter(): [%ld] mode = AP_MODE_SPECULATIVE", tid);
+         ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_input_filter(): [%ld] end (ap_get_brigade)", tid);
       }
 
       return ap_get_brigade(f->next, bb, mode, block, readbytes);
    }
    else if (mode == AP_MODE_INIT)
    {
-      if (APLOG_C_IS_LEVEL(f->c, request_log_level))
+      if (APLOG_R_IS_LEVEL(f->r, request_log_level))
       {
-         ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_input_filter(): [%ld] mode = AP_MODE_INIT", tid);
-         ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_input_filter(): [%ld] end (ap_get_brigade)", tid);
+         ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_input_filter(): [%ld] mode = AP_MODE_INIT", tid);
+         ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_input_filter(): [%ld] end (ap_get_brigade)", tid);
       }
 
       return ap_get_brigade(f->next, bb, mode, block, readbytes);
    }
    else if (mode == AP_MODE_READBYTES)
    {
-      if (APLOG_C_IS_LEVEL(f->c, request_log_level))
-         ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_input_filter(): [%ld] mode = AP_MODE_READBYTES", tid);
+      if (APLOG_R_IS_LEVEL(f->r, request_log_level))
+         ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_input_filter(): [%ld] mode = AP_MODE_READBYTES", tid);
 
       wt_input_filter_cpp *ctx = static_cast<wt_input_filter_cpp *>(f->ctx);
 
       if (!ctx)
       {
-         if (APLOG_C_IS_LEVEL(f->c, request_log_level))
+         if (APLOG_R_IS_LEVEL(f->r, request_log_level))
          {
-            ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_input_filter(): [%ld] the filter context is null!", tid);
-            ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_input_filter(): [%ld] end (ap_get_brigade)", tid);
+            ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_input_filter(): [%ld] the filter context is null!", tid);
+            ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_input_filter(): [%ld] end (ap_get_brigade)", tid);
          }
 
          return ap_get_brigade(f->next, bb, mode, block, readbytes);
       }
 
-      if (APLOG_C_IS_LEVEL(f->c, request_log_level))
+      if (APLOG_R_IS_LEVEL(f->r, request_log_level))
       {
-         ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_input_filter(): [%ld] URI = %s", tid, ctx->uri.c_str());
-         ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_input_filter(): [%ld] uuid = %s", tid, ctx->uuid.c_str());
+         ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_input_filter(): [%ld] URI = %s", tid, ctx->uri.c_str());
+         ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_input_filter(): [%ld] uuid = %s", tid, ctx->uuid.c_str());
       }
 
       if (ctx->tid != tid)
       {
-         if (APLOG_C_IS_LEVEL(f->c, request_log_level))
+         if (APLOG_R_IS_LEVEL(f->r, request_log_level))
          {
-            ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_input_filter(): [%ld] the current thread id doesn't match the request thread id (%ld)", tid, ctx->tid);
-            ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_input_filter(): [%ld] end (ap_get_brigade)", tid);
+            ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_input_filter(): [%ld] the current thread id doesn't match the request thread id (%ld)", tid, ctx->tid);
+            ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_input_filter(): [%ld] end (ap_get_brigade)", tid);
          }
+
+         // delete input filter context
+         delete ctx;
+         f->ctx = nullptr;
 
          return ap_get_brigade(f->next, bb, mode, block, readbytes);
       }
 
-      if (APLOG_C_IS_LEVEL(f->c, request_log_level))
-         ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_input_filter(): [%ld] reset call to getline", tid);
+      if (APLOG_R_IS_LEVEL(f->r, request_log_level))
+         ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_input_filter(): [%ld] reset AP_MODE_GETLINE count to zero", tid);
       ctx->getline = 0;
 
       // Initialize timestamp
@@ -1973,47 +2013,47 @@ extern "C" int wt_input_filter_impl(ap_filter_t *f, apr_bucket_brigade *bb, ap_i
       if (ctx->start_i == 0) ctx->start_i = start_filter;
 
       // read data bytes
-      apr_status_t ret = ap_get_brigade(f->next, bb, mode, block, readbytes);
-      if (ret == APR_SUCCESS)
+      if (apr_status_t ret = ap_get_brigade(f->next, bb, mode, block, readbytes);
+          ret == APR_SUCCESS)
       {
-         if (APLOG_C_IS_LEVEL(f->c, request_log_level))
+         if (APLOG_R_IS_LEVEL(f->r, request_log_level))
          {
-            ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_input_filter(): [%ld] ap_get_brigade() = APR_SUCCESS", tid);
-            ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_input_filter(): [%ld] content_length = %ld", tid, ctx->content_length_i);
+            ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_input_filter(): [%ld] ap_get_brigade() = APR_SUCCESS", tid);
+            ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_input_filter(): [%ld] content_length = %ld", tid, ctx->content_length_i);
          }
 
          for (apr_bucket *b = APR_BRIGADE_FIRST(bb); b != APR_BRIGADE_SENTINEL(bb); b = APR_BUCKET_NEXT(b))
          {
             if (APR_BUCKET_IS_EOS(b))
             {
-               if (APLOG_C_IS_LEVEL(f->c, request_log_level))
-                  ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_input_filter(): [%ld] end of stream bucket found", tid);
+               if (APLOG_R_IS_LEVEL(f->r, request_log_level))
+                  ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_input_filter(): [%ld] end of stream bucket found", tid);
                break;
             }
 
-            if (APLOG_C_IS_LEVEL(f->c, request_log_level))
-               ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_input_filter(): [%ld] reading from bucket ...", tid);
+            if (APLOG_R_IS_LEVEL(f->r, request_log_level))
+               ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_input_filter(): [%ld] reading from bucket ...", tid);
 
+            // read from bucket
             const char *buffer;
             apr_size_t bytes;
-            int rv = apr_bucket_read(b, &buffer, &bytes, APR_BLOCK_READ);
-
-            if (rv == APR_SUCCESS)
+            if (auto rv = apr_bucket_read(b, &buffer, &bytes, APR_BLOCK_READ);
+               rv == APR_SUCCESS)
             {
-               if (APLOG_C_IS_LEVEL(f->c, request_log_level))
-                  ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_input_filter(): [%ld] read %ld bytes", tid, bytes);
+               if (APLOG_R_IS_LEVEL(f->r, request_log_level))
+                  ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_input_filter(): [%ld] read %ld bytes", tid, bytes);
 
                if (bytes > 0)
                {
                   if (((ctx->body.length() + bytes) / 1'048'576L) > ctx->conf->body_limit)
                   {
-                     if (APLOG_C_IS_LEVEL(f->c, request_log_level))
-                        ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_input_filter(): [%ld] exceeded the body limit", tid);
+                     if (APLOG_R_IS_LEVEL(f->r, request_log_level))
+                        ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_input_filter(): [%ld] exceeded the body limit", tid);
 
                      if (!ctx->trace_uri)
                      {
-                        if (APLOG_C_IS_LEVEL(f->c, request_log_level))
-                           ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_input_filter(): [%ld] the tracking will be cancelled", tid);
+                        if (APLOG_R_IS_LEVEL(f->r, request_log_level))
+                           ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_input_filter(): [%ld] the tracking will be cancelled", tid);
 
                         // update elapsed times
                         apr_time_t end_filter = apr_time_now();
@@ -2022,12 +2062,12 @@ extern "C" int wt_input_filter_impl(ap_filter_t *f, apr_bucket_brigade *bb, ap_i
                         // update module overhead for request
                         module_overhead_for_current_request += ctx->elapsed;
 
-                        if (APLOG_C_IS_LEVEL(f->c, request_log_level))
+                        if (APLOG_R_IS_LEVEL(f->r, request_log_level))
                         {
                            apr_time_t elapsed = end_filter - ctx->start_i;
-                           ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_input_filter(): [%ld] ELAPSED TIMES: total = %s, filter = %s",
+                           ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_input_filter(): [%ld] ELAPSED TIMES: total = %s, filter = %s",
                                          tid, to_string(elapsed).c_str(), to_string(ctx->elapsed).c_str());
-                           ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_input_filter(): [%ld] end (APR_SUCCESS)", tid);
+                           ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_input_filter(): [%ld] end (APR_SUCCESS)", tid);
                         }
 
                         // Delete active filter context
@@ -2038,25 +2078,21 @@ extern "C" int wt_input_filter_impl(ap_filter_t *f, apr_bucket_brigade *bb, ap_i
                      }
                      else
                      {
-                        if (APLOG_C_IS_LEVEL(f->c, request_log_level))
-                           ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_input_filter(): [%ld] forced to continue cause at least a trace uri matched", tid);
+                        if (APLOG_R_IS_LEVEL(f->r, request_log_level))
+                           ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_input_filter(): [%ld] forced to continue cause at least a trace uri matched", tid);
                      }
                   }
 
                   // add read bytes
                   ctx->body.append(buffer, bytes);
-                  if (APLOG_C_IS_LEVEL(f->c, request_log_level))
-                     ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_input_filter(): [%ld] partial bytes read so far = %ld", tid, ctx->body.length());
-               }
-               else
-               {
-                  ctx->elapsed += apr_time_now() - start_filter;
+                  if (APLOG_R_IS_LEVEL(f->r, request_log_level))
+                     ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_input_filter(): [%ld] partial bytes read so far = %ld", tid, ctx->body.length());
                }
             }
             else
             {
-               if (APLOG_C_IS_LEVEL(f->c, request_log_level))
-                  ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_input_filter(): [%ld] failed reading from bucket (%d)", tid, rv);
+               if (APLOG_R_IS_LEVEL(f->r, request_log_level))
+                  ap_log_rerror(APLOG_MARK, request_log_level, rv, f->r, "wt_input_filter(): [%ld] failed reading from bucket", tid);
 
                // update elapsed times
                apr_time_t end_filter = apr_time_now();
@@ -2065,12 +2101,12 @@ extern "C" int wt_input_filter_impl(ap_filter_t *f, apr_bucket_brigade *bb, ap_i
                // update module overhead for request
                module_overhead_for_current_request += ctx->elapsed;
 
-               if (APLOG_C_IS_LEVEL(f->c, request_log_level))
+               if (APLOG_R_IS_LEVEL(f->r, request_log_level))
                {
                   apr_time_t elapsed = end_filter - ctx->start_i;
-                  ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_input_filter(): [%ld] ELAPSED TIMES: total = %s, filter = %s",
+                  ap_log_rerror(APLOG_MARK, request_log_level, rv, f->r, "wt_input_filter(): [%ld] ELAPSED TIMES: total = %s, filter = %s",
                                 tid, to_string(elapsed).c_str(), to_string(ctx->elapsed).c_str());
-                  ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_input_filter(): [%ld] end (%d)", tid, rv);
+                  ap_log_rerror(APLOG_MARK, request_log_level, rv, f->r, "wt_input_filter(): [%ld] end", tid);
                }
 
                // Delete active filter context
@@ -2083,11 +2119,11 @@ extern "C" int wt_input_filter_impl(ap_filter_t *f, apr_bucket_brigade *bb, ap_i
 
          if (!ctx->body.empty() && ctx->body.length() == ctx->content_length_i)
          {
-            if (APLOG_C_IS_LEVEL(f->c, request_log_level))
+            if (APLOG_R_IS_LEVEL(f->r, request_log_level))
             {
-               ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_input_filter(): [%ld] **** START END OF REQUEST BODY ****", tid);
-               ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_input_filter(): [%ld] read all content-length bytes", tid);
-               ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_input_filter(): [%ld] total bytes read = %ld", tid, ctx->body.length());
+               ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_input_filter(): [%ld] **** START END OF REQUEST BODY (AP_MODE_READBYTES) ****", tid);
+               ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_input_filter(): [%ld] read all content-length bytes", tid);
+               ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_input_filter(): [%ld] total bytes read = %ld", tid, ctx->body.length());
             }
 
             if (ctx->conf->log_enabled)
@@ -2095,44 +2131,44 @@ extern "C" int wt_input_filter_impl(ap_filter_t *f, apr_bucket_brigade *bb, ap_i
                if (ctx->query_string)
                {
                   // Add as a query string and not as a request body
-                  if (APLOG_C_IS_LEVEL(f->c, request_log_level))
-                     ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_input_filter(): [%ld] scan for query string parameters to be removed ...", tid);
+                  if (APLOG_R_IS_LEVEL(f->r, request_log_level))
+                     ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_input_filter(): [%ld] scan for query string parameters to be removed ...", tid);
 
-                  if (APLOG_C_IS_LEVEL(f->c, request_log_level))
-                     ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_input_filter(): [%ld] body = %s", tid, ctx->body.c_str());
+                  if (APLOG_R_IS_LEVEL(f->r, request_log_level))
+                     ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_input_filter(): [%ld] body = %s", tid, ctx->body.c_str());
    
                   for (auto &parameter_re : parameters_re)
                   {
                      try
                      {
-                        std::smatch match;
-                        if (std::regex_search(ctx->body, match, parameter_re))
+                        if (std::smatch match;
+                            std::regex_search(ctx->body, match, parameter_re))
                         {                  
-                           if (APLOG_C_IS_LEVEL(f->c, request_log_level))
-                              ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_input_filter(): [%ld] found a query string parameter to be removed", tid);
+                           if (APLOG_R_IS_LEVEL(f->r, request_log_level))
+                              ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_input_filter(): [%ld] found a query string parameter to be removed", tid);
                               
                            // remove header
                            ctx->body.erase(match.position(), match.length());
                   
-                           if (APLOG_C_IS_LEVEL(f->c, request_log_level))
-                              ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_output_filter(): [%ld] removed query string parameter, new body length = %ld", tid, ctx->body.length());
+                           if (APLOG_R_IS_LEVEL(f->r, request_log_level))
+                              ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_output_filter(): [%ld] removed query string parameter, new body length = %ld", tid, ctx->body.length());
                         }
                      }
                   
                      catch (const std::exception &e)
                      {
-                        if (APLOG_C_IS_LEVEL(f->c, request_log_level))
-                              ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_output_filter(): [%ld] search for query string parameters failed because of %s", tid, e.what());
+                        if (APLOG_R_IS_LEVEL(f->r, request_log_level))
+                              ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_output_filter(): [%ld] search for query string parameters failed because of %s", tid, e.what());
                      }
                   }
    
-                  if (APLOG_C_IS_LEVEL(f->c, request_log_level))
-                     ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_input_filter(): [%ld] scan for query string parameters to be removed done", tid);
+                  if (APLOG_R_IS_LEVEL(f->r, request_log_level))
+                     ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_input_filter(): [%ld] scan for query string parameters to be removed done", tid);
    
                   if (!ctx->body.empty())
                   {
-                     if (APLOG_C_IS_LEVEL(f->c, request_log_level))
-                        ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_input_filter(): [%ld] body = %s", tid, ctx->body.c_str());
+                     if (APLOG_R_IS_LEVEL(f->r, request_log_level))
+                        ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_input_filter(): [%ld] body = %s", tid, ctx->body.c_str());
                      
                         // Add the query string as header "*Post"
                      std::string request_body_data { "*Post: " + ctx->body };
@@ -2140,13 +2176,13 @@ extern "C" int wt_input_filter_impl(ap_filter_t *f, apr_bucket_brigade *bb, ap_i
                      std::strcpy(data, request_body_data.c_str());
                      apr_table_setn(f->r->notes, "request_body_data", data);
 
-                     if (APLOG_C_IS_LEVEL(f->c, request_log_level))
-                     ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_input_filter(): [%ld] final query string parameters = %s", tid, data);
+                     if (APLOG_R_IS_LEVEL(f->r, request_log_level))
+                     ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_input_filter(): [%ld] final query string parameters = %s", tid, data);
                   }
                   else
                   {
-                     if (APLOG_C_IS_LEVEL(f->c, request_log_level))
-                        ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_input_filter(): [%ld] final query string parameters is empty", tid);
+                     if (APLOG_R_IS_LEVEL(f->r, request_log_level))
+                        ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_input_filter(): [%ld] final query string parameters is empty", tid);
                   }
                }
                else
@@ -2154,8 +2190,8 @@ extern "C" int wt_input_filter_impl(ap_filter_t *f, apr_bucket_brigade *bb, ap_i
                   // BASE64 encoding
                   apr_time_t start_b64 = apr_time_now();
                   std::string record_b64 = base64encode(ctx->body);
-                  if (APLOG_C_IS_LEVEL(f->c, request_log_level))
-                     ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_input_filter(): [%ld] BASE64 encoding elapsed time = %s",
+                  if (APLOG_R_IS_LEVEL(f->r, request_log_level))
+                     ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_input_filter(): [%ld] BASE64 encoding elapsed time = %s",
                                  tid, to_string(apr_time_now() - start_b64).c_str());
 
                   // request body data
@@ -2167,12 +2203,12 @@ extern "C" int wt_input_filter_impl(ap_filter_t *f, apr_bucket_brigade *bb, ap_i
             }
             else
             {
-               if (APLOG_C_IS_LEVEL(f->c, request_log_level))
-                  ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_input_filter(): [%ld] nothing to save since there isn't a configured access file", tid);
+               if (APLOG_R_IS_LEVEL(f->r, request_log_level))
+                  ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_input_filter(): [%ld] nothing to save since there isn't a configured access file", tid);
             }
 
-            if (APLOG_C_IS_LEVEL(f->c, request_log_level))
-               ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_input_filter(): [%ld] **** FINISH END OF REQUEST BODY ****", tid);
+            if (APLOG_R_IS_LEVEL(f->r, request_log_level))
+               ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_input_filter(): [%ld] **** FINISH END OF REQUEST BODY ****", tid);
             
             // increment counter
             apr_atomic_inc32(&ctx->conf->request_bodies);
@@ -2185,41 +2221,51 @@ extern "C" int wt_input_filter_impl(ap_filter_t *f, apr_bucket_brigade *bb, ap_i
             // update module overhead for request
             module_overhead_for_current_request += ctx->elapsed;
 
-            if (APLOG_C_IS_LEVEL(f->c, request_log_level))
+            if (APLOG_R_IS_LEVEL(f->r, request_log_level))
             {
                apr_time_t elapsed = end_filter - ctx->start_i;
-               ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_input_filter(): [%ld] ELAPSED TIMES: total = %s, filter = %s",
+               ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_input_filter(): [%ld] ELAPSED TIMES: total = %s, filter = %s",
                              tid, to_string(elapsed).c_str(), to_string(ctx->elapsed).c_str());
             }
-
-            // Delete active filter context
-            delete ctx;
-            f->ctx = nullptr;
          }
 
-         if (APLOG_C_IS_LEVEL(f->c, request_log_level))
-            ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_input_filter(): [%ld] end (APR_SUCCESS)", tid);
+         if (APLOG_R_IS_LEVEL(f->r, request_log_level))
+            ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_input_filter(): [%ld] end (APR_SUCCESS)", tid);
+
+         // Delete active filter context
+         delete ctx;
+         f->ctx = nullptr;
 
          return APR_SUCCESS;
       }
       else
       {
-         if (APLOG_C_IS_LEVEL(f->c, request_log_level))
+         if (APLOG_R_IS_LEVEL(f->r, request_log_level))
          {
-            ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_input_filter(): [%ld] ap_get_brigade() = %d (ERROR)", tid, ret);
-            ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_input_filter(): [%ld] end (%d)", tid, ret);
+            ap_log_rerror(APLOG_MARK, request_log_level, ret, f->r, "wt_input_filter(): [%ld] ap_get_brigade failed", tid);
+            ap_log_rerror(APLOG_MARK, request_log_level, ret, f->r, "wt_input_filter(): [%ld] end", tid);
          }
+
+         // Delete active filter context
+         delete ctx;
+         f->ctx = nullptr;
 
          return ret;
       }
    }
    else
    {
-      if (APLOG_C_IS_LEVEL(f->c, request_log_level))
-         ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_input_filter(): [%ld] mode = %d", tid, mode);
+      if (APLOG_R_IS_LEVEL(f->r, request_log_level))
+         ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_input_filter(): [%ld] mode = %d", tid, mode);
 
       return APR_ENOTIMPL;
    }
+}
+
+void free_data(void *data)
+{
+   char *to_be_deleted = static_cast<char *>(data);
+   if (to_be_deleted) delete[] to_be_deleted;
 }
 
 extern "C" int wt_output_filter_impl(ap_filter_t *f, apr_bucket_brigade *bb)
@@ -2230,46 +2276,57 @@ extern "C" int wt_output_filter_impl(ap_filter_t *f, apr_bucket_brigade *bb)
    const char *host = apr_table_get(f->r->headers_in, "Host");
    if (!host) host = f->r->hostname;
 
-   if (APLOG_C_IS_LEVEL(f->c, request_log_level))
-      ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_output_filter(): [%ld] start", tid);
+   if (APLOG_R_IS_LEVEL(f->r, request_log_level))
+      ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_output_filter(): [%ld] start", tid);
 
    wt_output_filter_cpp *ctx = static_cast<wt_output_filter_cpp *>(f->ctx);
 
    if (!ctx)
    {
-      if (APLOG_C_IS_LEVEL(f->c, request_log_level))
+      if (APLOG_R_IS_LEVEL(f->r, request_log_level))
       {
-         ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_output_filter(): [%ld] the filter context is null!", tid);
-         ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_output_filter(): [%ld] end (ap_pass_brigade)", tid);
+         ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_output_filter(): [%ld] the filter context is null!", tid);
+         ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_output_filter(): [%ld] end (ap_pass_brigade)", tid);
       }
 
       return ap_pass_brigade(f->next, bb);
    }
 
-   if (APLOG_C_IS_LEVEL(f->c, request_log_level))
+   // print information out
+   if (APLOG_R_IS_LEVEL(f->r, request_log_level))
    {
-      ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_output_filter(): [%ld] URI = %s", tid, ctx->uri.c_str());
-      ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_output_filter(): [%ld] uuid = %s", tid, ctx->uuid.c_str());
+      ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_output_filter(): [%ld] URI = %s", tid, ctx->uri.c_str());
+      ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_output_filter(): [%ld] uuid = %s", tid, ctx->uuid.c_str());
    }
 
+   // check same thread as expected
    if (ctx->tid != tid)
    {
-      if (APLOG_C_IS_LEVEL(f->c, request_log_level))
+      if (APLOG_R_IS_LEVEL(f->r, request_log_level))
       {
-         ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_output_filter(): [%ld] the current thread id doesn't match the request thread id (%ld)", tid, ctx->tid);
-         ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_output_filter(): [%ld] end (ap_pass_brigade)", tid);
+         ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_output_filter(): [%ld] the current thread id doesn't match the request thread id (%ld)", tid, ctx->tid);
+         ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_output_filter(): [%ld] end (ap_pass_brigade)", tid);
       }
+
+      // Delete active filter context
+      delete ctx;
+      f->ctx = nullptr;
 
       return ap_pass_brigade(f->next, bb);
    }
 
+   // empty brigade
    if (APR_BRIGADE_EMPTY(bb))
    {
-      if (APLOG_C_IS_LEVEL(f->c, request_log_level))
+      if (APLOG_R_IS_LEVEL(f->r, request_log_level))
       {
-         ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_output_filter(): [%ld] the given brigade is empty", tid);
-         ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_output_filter(): [%ld] end (ap_pass_brigade)", tid);
+         ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_output_filter(): [%ld] the given brigade is empty", tid);
+         ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_output_filter(): [%ld] end (ap_pass_brigade)", tid);
       }
+
+      // Delete active filter context
+      delete ctx;
+      f->ctx = nullptr;
 
       return ap_pass_brigade(f->next, bb);
    }
@@ -2280,20 +2337,20 @@ extern "C" int wt_output_filter_impl(ap_filter_t *f, apr_bucket_brigade *bb)
 
    if (f->r && f->r->headers_out && ctx->output_filter)
    {
-      if (APLOG_C_IS_LEVEL(f->c, request_log_level))
-         ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_output_filter(): [%ld] request_rec is present, search Content_Type", tid);
+      if (APLOG_R_IS_LEVEL(f->r, request_log_level))
+         ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_output_filter(): [%ld] request_rec is present, search Content_Type", tid);
 
       if (const char *content_type = apr_table_get(f->r->headers_out, "Content-Type");
           content_type)
       {
-         if (APLOG_C_IS_LEVEL(f->c, request_log_level))
-            ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_output_filter(): [%ld] Content-Type = %s", tid, content_type);
+         if (APLOG_R_IS_LEVEL(f->r, request_log_level))
+            ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_output_filter(): [%ld] Content-Type = %s", tid, content_type);
 
-         const char *ct_matched = search_regex_table(content_type, ctx->conf->content_table);
-         if (!ct_matched)
+         if (const char *ct_matched = search_regex_table(content_type, ctx->conf->content_table);
+             !ct_matched)
          {
-            if (APLOG_C_IS_LEVEL(f->c, request_log_level))
-               ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_output_filter(): [%ld] the Content-Type doesn't match with the enabled Content-Types", tid);
+            if (APLOG_R_IS_LEVEL(f->r, request_log_level))
+               ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_output_filter(): [%ld] the Content-Type doesn't match with the enabled Content-Types", tid);
 
             if (!ctx->output_header && !ctx->trace_uri)
             {
@@ -2304,12 +2361,12 @@ extern "C" int wt_output_filter_impl(ap_filter_t *f, apr_bucket_brigade *bb)
                // update module overhead for request
                module_overhead_for_current_request += ctx->elapsed;
 
-               if (APLOG_C_IS_LEVEL(f->c, request_log_level))
+               if (APLOG_R_IS_LEVEL(f->r, request_log_level))
                {
                   apr_time_t elapsed = end_filter - ctx->start_o;
-                  ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_output_filter(): [%ld] ELAPSED TIMES: total = %s, filter = %s",
+                  ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_output_filter(): [%ld] ELAPSED TIMES: total = %s, filter = %s",
                                 tid, to_string(elapsed).c_str(), to_string(ctx->elapsed).c_str());
-                  ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_output_filter(): [%ld] end (ap_pass_brigade)", tid);
+                  ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_output_filter(): [%ld] end (ap_pass_brigade)", tid);
                }
 
                // Delete active filter context
@@ -2320,27 +2377,27 @@ extern "C" int wt_output_filter_impl(ap_filter_t *f, apr_bucket_brigade *bb)
             }
             else if (!ctx->trace_uri)
             {
-               if (APLOG_C_IS_LEVEL(f->c, request_log_level))
-                  ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_output_filter(): [%ld] forced to continue cause there are headers to be removed", tid);
+               if (APLOG_R_IS_LEVEL(f->r, request_log_level))
+                  ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_output_filter(): [%ld] forced to continue cause there are headers to be removed", tid);
 
                ctx->output_filter = false;
             }
             else
             {
-               if (APLOG_C_IS_LEVEL(f->c, request_log_level))
-                  ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_output_filter(): [%ld] forced to continue cause at least a trace uri matched (output_header: %d)", tid, ctx->output_header);
+               if (APLOG_R_IS_LEVEL(f->r, request_log_level))
+                  ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_output_filter(): [%ld] forced to continue cause at least a trace uri matched (output_header: %s)", tid, to_char(ctx->output_header));
             }
          }
          else
          {
-            if (APLOG_C_IS_LEVEL(f->c, request_log_level))
-               ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_output_filter(): [%ld] Content-Type matched = %s", tid, ct_matched);
+            if (APLOG_R_IS_LEVEL(f->r, request_log_level))
+               ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_output_filter(): [%ld] Content-Type matched = %s", tid, ct_matched);
          }
       }
       else
       {
-         if (APLOG_C_IS_LEVEL(f->c, request_log_level))
-            ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_output_filter(): [%ld] Content-Type is empty", tid);
+         if (APLOG_R_IS_LEVEL(f->r, request_log_level))
+            ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_output_filter(): [%ld] Content-Type is empty", tid);
 
          if (!ctx->output_header && !ctx->trace_uri)
          {
@@ -2351,12 +2408,12 @@ extern "C" int wt_output_filter_impl(ap_filter_t *f, apr_bucket_brigade *bb)
             // update module overhead for request
             module_overhead_for_current_request += ctx->elapsed;
 
-            if (APLOG_C_IS_LEVEL(f->c, request_log_level))
+            if (APLOG_R_IS_LEVEL(f->r, request_log_level))
             {
                apr_time_t elapsed = end_filter - ctx->start_o;
-               ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_output_filter(): [%ld] ELAPSED TIMES: total = %s, filter = %s",
+               ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_output_filter(): [%ld] ELAPSED TIMES: total = %s, filter = %s",
                              tid, to_string(elapsed).c_str(), to_string(ctx->elapsed).c_str());
-               ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_output_filter(): [%ld] end (ap_pass_brigade)", tid);
+               ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_output_filter(): [%ld] end (ap_pass_brigade)", tid);
             }
 
             // Delete active filter context
@@ -2367,15 +2424,15 @@ extern "C" int wt_output_filter_impl(ap_filter_t *f, apr_bucket_brigade *bb)
          }
          else if (!ctx->trace_uri)
          {
-            if (APLOG_C_IS_LEVEL(f->c, request_log_level))
-               ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_output_filter(): [%ld] forced to continue cause there are headers to be removed", tid);
+            if (APLOG_R_IS_LEVEL(f->r, request_log_level))
+               ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_output_filter(): [%ld] forced to continue cause there are headers to be removed", tid);
 
             ctx->output_filter = false;
          }
          else
          {
-            if (APLOG_C_IS_LEVEL(f->c, request_log_level))
-               ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_output_filter(): [%ld] forced to continue cause at least a trace uri matched (output_header: %d)", tid, ctx->output_header);
+            if (APLOG_R_IS_LEVEL(f->r, request_log_level))
+               ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_output_filter(): [%ld] forced to continue cause at least a trace uri matched (output_header: %s)", tid, to_char(ctx->output_header));
          }
       }
       
@@ -2384,12 +2441,12 @@ extern "C" int wt_output_filter_impl(ap_filter_t *f, apr_bucket_brigade *bb)
       {
          unsigned long cl = std::stoul(content_length);
          unsigned long clinmb = cl / 1'048'576L;
-         if (APLOG_C_IS_LEVEL(f->c, request_log_level))
-            ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_output_filter(): [%ld] content length in MB = %lu", tid, clinmb);
+         if (APLOG_R_IS_LEVEL(f->r, request_log_level))
+            ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_output_filter(): [%ld] content length in MB = %lu", tid, clinmb);
          if (clinmb > ctx->conf->body_limit)
          {
-            if (APLOG_C_IS_LEVEL(f->c, request_log_level))
-               ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_output_filter(): [%ld] the Content-Length exceeded the body limit", tid);
+            if (APLOG_R_IS_LEVEL(f->r, request_log_level))
+               ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_output_filter(): [%ld] the Content-Length exceeded the body limit", tid);
 
             if (!ctx->output_header && !ctx->trace_uri)
             {
@@ -2400,12 +2457,12 @@ extern "C" int wt_output_filter_impl(ap_filter_t *f, apr_bucket_brigade *bb)
                // update module overhead for request
                module_overhead_for_current_request += ctx->elapsed;
 
-               if (APLOG_C_IS_LEVEL(f->c, request_log_level))
+               if (APLOG_R_IS_LEVEL(f->r, request_log_level))
                {
                   apr_time_t elapsed = end_filter - ctx->start_o;
-                  ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_output_filter(): [%ld] ELAPSED TIMES: total = %s, filter = %s",
+                  ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_output_filter(): [%ld] ELAPSED TIMES: total = %s, filter = %s",
                                 tid, to_string(elapsed).c_str(), to_string(ctx->elapsed).c_str());
-                  ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_output_filter(): [%ld] end (ap_pass_brigade)", tid);
+                  ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_output_filter(): [%ld] end (ap_pass_brigade)", tid);
                }
 
                // Delete active filter context
@@ -2416,15 +2473,15 @@ extern "C" int wt_output_filter_impl(ap_filter_t *f, apr_bucket_brigade *bb)
             }
             else if (!ctx->trace_uri)
             {
-               if (APLOG_C_IS_LEVEL(f->c, request_log_level))
-                  ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_output_filter(): [%ld] forced to continue cause there are headers to be removed", tid);
+               if (APLOG_R_IS_LEVEL(f->r, request_log_level))
+                  ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_output_filter(): [%ld] forced to continue cause there are headers to be removed", tid);
 
                ctx->output_filter = false;
             }
             else
             {
-               if (APLOG_C_IS_LEVEL(f->c, request_log_level))
-                  ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_output_filter(): [%ld] forced to continue cause at least a trace uri matched (output_header: %d)", tid, ctx->output_header);
+               if (APLOG_R_IS_LEVEL(f->r, request_log_level))
+                  ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_output_filter(): [%ld] forced to continue cause at least a trace uri matched (output_header: %s)", tid, to_char(ctx->output_header));
                ctx->body.reserve(cl);
             }
          }
@@ -2439,24 +2496,24 @@ extern "C" int wt_output_filter_impl(ap_filter_t *f, apr_bucket_brigade *bb)
    {
       if (APR_BUCKET_IS_EOS(b))
       {
-         if (APLOG_C_IS_LEVEL(f->c, request_log_level))
-            ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_output_filter(): [%ld] **** EOS ****", tid);
+         if (APLOG_R_IS_LEVEL(f->r, request_log_level))
+            ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_output_filter(): [%ld] **** EOS ****", tid);
 
          if (ctx->output_filter)
          {
-            if (APLOG_C_IS_LEVEL(f->c, request_log_level))
+            if (APLOG_R_IS_LEVEL(f->r, request_log_level))
             {
-               ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_output_filter(): [%ld] **** START END OF RESPONSE BODY ****", tid);
-               ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_output_filter(): [%ld] total bytes read = %ld", tid, ctx->body.length());
+               ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_output_filter(): [%ld] **** START END OF RESPONSE BODY ****", tid);
+               ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_output_filter(): [%ld] total bytes read = %ld", tid, ctx->body.length());
             }
 
             if (!ctx->body.empty())
             {
                if (const char *ce = apr_table_get(f->r->headers_out, "Content-Encoding");
-                   ce && (!strcmp(ce, "deflate") || !strcmp(ce, "gzip")))
+                   ce && (!std::strcmp(ce, "deflate") || !std::strcmp(ce, "gzip")))
                {
-                  if (APLOG_C_IS_LEVEL(f->c, request_log_level))
-                     ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_output_filter(): [%ld] the response body is compressed (%s)", tid, ce);
+                  if (APLOG_R_IS_LEVEL(f->r, request_log_level))
+                     ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_output_filter(): [%ld] the response body is compressed (%s)", tid, ce);
                   
                   // increment counter
                   apr_atomic_inc32(&ctx->conf->response_with_compressed_bodies);
@@ -2464,140 +2521,141 @@ extern "C" int wt_output_filter_impl(ap_filter_t *f, apr_bucket_brigade *bb)
 
                   if (ctx->conf->inflate_response == 1)
                   {
-                     if (APLOG_C_IS_LEVEL(f->c, request_log_level))
-                        ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_output_filter(): [%ld] the response body must be inflated", tid);
+                     if (APLOG_R_IS_LEVEL(f->r, request_log_level))
+                        ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_output_filter(): [%ld] the response body must be inflated", tid);
 
                      if (!ctx->body.empty())
                      {
-                        if (APLOG_C_IS_LEVEL(f->c, request_log_level))
-                           ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_output_filter(): [%ld] payload length (deflated) = %ld", tid, ctx->body.length());
+                        if (APLOG_R_IS_LEVEL(f->r, request_log_level))
+                           ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_output_filter(): [%ld] payload length (deflated) = %ld", tid, ctx->body.length());
 
-                        if (APLOG_C_IS_LEVEL(f->c, request_log_level))
-                           ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_output_filter(): [%ld] inflate the payload", tid);
+                        if (APLOG_R_IS_LEVEL(f->r, request_log_level))
+                           ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_output_filter(): [%ld] inflate the payload", tid);
                         
-                        std::string inflated = wt_inflate(ctx->body, !strcmp(ce, "gzip") ? 2 : 1);
+                        std::string inflated = wt_inflate(ctx->body, !std::strcmp(ce, "gzip") ? 2 : 1);
                         
                         if (!inflated.empty())
                         {
-                           if (APLOG_C_IS_LEVEL(f->c, request_log_level))
-                              ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_output_filter(): [%ld] payload length (inflated) = %ld", tid, inflated.length());
+                           if (APLOG_R_IS_LEVEL(f->r, request_log_level))
+                              ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_output_filter(): [%ld] payload length (inflated) = %ld", tid, inflated.length());
                            
                            ctx->body.assign(inflated);
                         }
                         else
                         {
-                           if (APLOG_C_IS_LEVEL(f->c, request_log_level))
-                              ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_output_filter(): [%ld] payload not inflated (failure)", tid);
+                           if (APLOG_R_IS_LEVEL(f->r, request_log_level))
+                              ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_output_filter(): [%ld] payload not inflated (failure)", tid);
                         }
                      }
                      else
                      {
-                        if (APLOG_C_IS_LEVEL(f->c, request_log_level))
-                           ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_output_filter(): [%ld] weird content-encoding because there is nothing to inflate", tid);
+                        if (APLOG_R_IS_LEVEL(f->r, request_log_level))
+                           ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_output_filter(): [%ld] weird content-encoding because there is nothing to inflate", tid);
                      }
                   }
                   else
                   {
-                     if (APLOG_C_IS_LEVEL(f->c, request_log_level))
-                        ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_output_filter(): [%ld] the response must be left deflated", tid);
+                     if (APLOG_R_IS_LEVEL(f->r, request_log_level))
+                        ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_output_filter(): [%ld] the response must be left deflated", tid);
                   }
                }
 
-               if (APLOG_C_IS_LEVEL(f->c, request_log_level))
-                  ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_output_filter(): [%ld] payload length = %ld", tid, ctx->body.length());
-            }
-
-            if (ctx->conf->log_enabled)
-            {
-               if (ctx->body.length() > 0 && (ctx->body.length() / 1'048'576L) <= ctx->conf->body_limit)
+               if (APLOG_R_IS_LEVEL(f->r, request_log_level))
+                  ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_output_filter(): [%ld] payload length = %ld", tid, ctx->body.length());
+               
+               if (ctx->conf->log_enabled)
                {
-                  // BASE64 encoding
-                  apr_time_t start_b64 = apr_time_now();
-                  std::string record_b64 = base64encode(ctx->body);
-                  if (APLOG_C_IS_LEVEL(f->c, request_log_level))
-                     ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_output_filter(): [%ld] BASE64 encoding elapsed time = %s",
-                                 tid, to_string(apr_time_now() - start_b64).c_str());
-
-                  // response body data
-                  std::string response_body_data { "\"**RESPONSE_BODY**\"|" + record_b64 };
-                  char * data = new char[response_body_data.length() + 1];
-                  std::strcpy(data, response_body_data.c_str());
-                  apr_table_setn(f->r->notes, "response_body_data", data);                  
-               }
-               else if (ctx->body.length() == 0)
-               {
-                  if (APLOG_C_IS_LEVEL(f->c, request_log_level))
-                     ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_output_filter(): [%ld] payload length = 0, nothing to do", tid);
+                  if (ctx->body.length() > 0 && 
+                      ((ctx->body.length() / 1'048'576L) <= ctx->conf->body_limit || ctx->trace_uri))
+                  {
+                     // BASE64 encoding
+                     apr_time_t start_b64 = apr_time_now();
+                     std::string record_b64 = base64encode(ctx->body);
+                     if (APLOG_R_IS_LEVEL(f->r, request_log_level))
+                        ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_output_filter(): [%ld] BASE64 encoding elapsed time = %s",
+                                    tid, to_string(apr_time_now() - start_b64).c_str());
+   
+                     // response body data
+                     std::string response_body_data { "\"**RESPONSE_BODY**\"|" + record_b64 };
+                     char * data = new char[response_body_data.length() + 1];
+                     std::strcpy(data, response_body_data.c_str());
+                     apr_table_setn(f->r->notes, "response_body_data", data);                  
+                  }
+                  else
+                  {
+                     if (APLOG_R_IS_LEVEL(f->r, request_log_level))
+                        ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_output_filter(): [%ld] payload length is greater than body_limit and the request is not a traced uri, skip response body", tid);
+                  }
                }
                else
                {
-                  if (APLOG_C_IS_LEVEL(f->c, request_log_level))
-                     ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_output_filter(): [%ld] payload length is greater than body_limit, skip response body", tid);
+                  if (APLOG_R_IS_LEVEL(f->r, request_log_level))
+                     ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_output_filter(): [%ld] nothing to save since there isn't a configured access file", tid);
+               }
+   
+               if (APLOG_R_IS_LEVEL(f->r, request_log_level))
+                  ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_output_filter(): [%ld] **** FINISH END OF RESPONSE BODY ****", tid);
+   
+               // increment counter
+               apr_atomic_inc32(&ctx->conf->response_bodies);
+               if (wt_counter) apr_atomic_inc32(&wt_counter->response_bodies);
+   
+               // update elapsed times
+               apr_time_t end_filter = apr_time_now();
+               ctx->elapsed += end_filter - start_filter;
+   
+               // update module overhead for request
+               module_overhead_for_current_request += ctx->elapsed;
+   
+               if (APLOG_R_IS_LEVEL(f->r, request_log_level))
+               {
+                  apr_time_t elapsed = end_filter - ctx->start_o;
+                  ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_output_filter(): [%ld] ELAPSED TIMES: total = %s, filter = %s",
+                              tid, to_string(elapsed).c_str(), to_string(ctx->elapsed).c_str());
                }
             }
             else
             {
-               if (APLOG_C_IS_LEVEL(f->c, request_log_level))
-                  ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_output_filter(): [%ld] nothing to save since there isn't a configured access file", tid);
+               if (APLOG_R_IS_LEVEL(f->r, request_log_level))
+                  ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_output_filter(): [%ld] payload length = 0, nothing to do", tid);
             }
-
-            if (APLOG_C_IS_LEVEL(f->c, request_log_level))
-               ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_output_filter(): [%ld] **** FINISH END OF RESPONSE BODY ****", tid);
-
-            // increment counter
-            apr_atomic_inc32(&ctx->conf->response_bodies);
-            if (wt_counter) apr_atomic_inc32(&wt_counter->response_bodies);
-
-            // update elapsed times
-            apr_time_t end_filter = apr_time_now();
-            ctx->elapsed += end_filter - start_filter;
-
-            // update module overhead for request
-            module_overhead_for_current_request += ctx->elapsed;
-
-            if (APLOG_C_IS_LEVEL(f->c, request_log_level))
-            {
-               apr_time_t elapsed = end_filter - ctx->start_o;
-               ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_output_filter(): [%ld] ELAPSED TIMES: total = %s, filter = %s",
-                           tid, to_string(elapsed).c_str(), to_string(ctx->elapsed).c_str());
-            }
-
-            // Delete active filter context
-            delete ctx;
-            f->ctx = nullptr;            
          }
          else
          {
             ctx->elapsed += apr_time_now() - start_filter;
          }
 
-         if (APLOG_C_IS_LEVEL(f->c, request_log_level))
-            ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_output_filter(): [%ld] end (ap_pass_brigade)", tid);
+         // Delete active filter context
+         delete ctx;
+         f->ctx = nullptr;  
+
+         if (APLOG_R_IS_LEVEL(f->r, request_log_level))
+            ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_output_filter(): [%ld] end (ap_pass_brigade)", tid);
+         
          return ap_pass_brigade(f->next, bb);
       }
 
-      if (APLOG_C_IS_LEVEL(f->c, request_log_level))
-         ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_output_filter(): [%ld] reading from bucket ...", tid);
+      if (APLOG_R_IS_LEVEL(f->r, request_log_level))
+         ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_output_filter(): [%ld] reading from bucket ...", tid);
 
       const char *buffer;
       size_t bytes = 0;
-      int rv = apr_bucket_read(b, &buffer, &bytes, APR_BLOCK_READ);
-
-      if (rv == APR_SUCCESS)
+      if (int rv = apr_bucket_read(b, &buffer, &bytes, APR_BLOCK_READ);
+          rv == APR_SUCCESS)
       {
-         if (APLOG_C_IS_LEVEL(f->c, request_log_level))
-            ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_output_filter(): [%ld] read %ld bytes", tid, bytes);
+         if (APLOG_R_IS_LEVEL(f->r, request_log_level))
+            ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_output_filter(): [%ld] read %ld bytes", tid, bytes);
          if (bytes > 0)
          {
             if (((ctx->body.length() + bytes) / 1'048'576L) > ctx->conf->body_limit)
             {
-               if (APLOG_C_IS_LEVEL(f->c, request_log_level))
-                  ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_output_filter(): [%ld] exceeded the body limit", tid);
+               if (APLOG_R_IS_LEVEL(f->r, request_log_level))
+                  ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_output_filter(): [%ld] exceeded the body limit", tid);
 
                if (!ctx->output_header && !ctx->trace_uri)
                {
-                  if (APLOG_C_IS_LEVEL(f->c, request_log_level))
-                     ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_output_filter(): [%ld] the tracking will be cancelled", tid);
+                  if (APLOG_R_IS_LEVEL(f->r, request_log_level))
+                     ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_output_filter(): [%ld] the tracking will be cancelled", tid);
                   
                   // update elapsed times
                   apr_time_t end_filter = apr_time_now();
@@ -2606,12 +2664,12 @@ extern "C" int wt_output_filter_impl(ap_filter_t *f, apr_bucket_brigade *bb)
                   // update module overhead for request
                   module_overhead_for_current_request += ctx->elapsed;
 
-                  if (APLOG_C_IS_LEVEL(f->c, request_log_level))
+                  if (APLOG_R_IS_LEVEL(f->r, request_log_level))
                   {
                      apr_time_t elapsed = end_filter - ctx->start_o;
-                     ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_output_filter(): [%ld] ELAPSED TIMES: total = %s, filter = %s",
+                     ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_output_filter(): [%ld] ELAPSED TIMES: total = %s, filter = %s",
                                  tid, to_string(elapsed).c_str(), to_string(ctx->elapsed).c_str());
-                     ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_output_filter(): [%ld] end (ap_pass_brigade)", tid);
+                     ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_output_filter(): [%ld] end (ap_pass_brigade)", tid);
                   }
 
                   // Delete active filter context
@@ -2622,14 +2680,14 @@ extern "C" int wt_output_filter_impl(ap_filter_t *f, apr_bucket_brigade *bb)
                }
                else if (!ctx->trace_uri)
                {
-                  if (APLOG_C_IS_LEVEL(f->c, request_log_level))
-                     ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_output_filter(): [%ld] forced to continue cause there are headers to be removed", tid);
+                  if (APLOG_R_IS_LEVEL(f->r, request_log_level))
+                     ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_output_filter(): [%ld] forced to continue cause there are headers to be removed", tid);
                   ctx->output_filter = false;
                }
                else
                {
-                  if (APLOG_C_IS_LEVEL(f->c, request_log_level))
-                     ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_output_filter(): [%ld] forced to continue cause at least a trace uri matched (output_header: %d)", tid, ctx->output_header);
+                  if (APLOG_R_IS_LEVEL(f->r, request_log_level))
+                     ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_output_filter(): [%ld] forced to continue cause at least a trace uri matched (output_header: %s)", tid, to_char(ctx->output_header));
                }
             }
 
@@ -2642,8 +2700,8 @@ extern "C" int wt_output_filter_impl(ap_filter_t *f, apr_bucket_brigade *bb)
                   if (auto end_of_headers = scan.find("\r\n\r\n");
                      end_of_headers != std::string::npos)
                   {
-                     if (APLOG_C_IS_LEVEL(f->c, request_log_level))
-                        ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_output_filter(): [%ld] found the end of the header part (%ld) [WINDOWS]", tid, end_of_headers);
+                     if (APLOG_R_IS_LEVEL(f->r, request_log_level))
+                        ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_output_filter(): [%ld] found the end of the header part (%ld) [WINDOWS]", tid, end_of_headers);
 
                      ctx->body.assign(scan.substr(end_of_headers + 4));
                      ctx->headers_found = true;
@@ -2651,8 +2709,8 @@ extern "C" int wt_output_filter_impl(ap_filter_t *f, apr_bucket_brigade *bb)
                   else if (end_of_headers = scan.find("\n\n");
                            end_of_headers != std::string::npos)
                   {
-                     if (APLOG_C_IS_LEVEL(f->c, request_log_level))
-                        ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_output_filter(): [%ld] found the end of the header part (%ld) [UNIX/MACOS]", tid, end_of_headers);
+                     if (APLOG_R_IS_LEVEL(f->r, request_log_level))
+                        ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_output_filter(): [%ld] found the end of the header part (%ld) [UNIX/MACOS]", tid, end_of_headers);
 
                      ctx->body.assign(scan.substr(end_of_headers + 2));
                      ctx->headers_found = true;
@@ -2668,88 +2726,90 @@ extern "C" int wt_output_filter_impl(ap_filter_t *f, apr_bucket_brigade *bb)
                   ctx->body.append(buffer, bytes);
                }
                
-               if (APLOG_C_IS_LEVEL(f->c, request_log_level))
-                  ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_output_filter(): [%ld] partial bytes read so far = %ld", tid, ctx->body.length());
+               if (APLOG_R_IS_LEVEL(f->r, request_log_level))
+                  ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_output_filter(): [%ld] partial bytes read so far = %ld", tid, ctx->body.length());
             }
 
             if (ctx->output_header)
             {
-               if (APLOG_C_IS_LEVEL(f->c, request_log_level))
-                  ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_output_filter(): [%ld] scan for response headers to be removed ...", tid);
+               if (APLOG_R_IS_LEVEL(f->r, request_log_level))
+                  ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_output_filter(): [%ld] scan for response headers to be removed ...", tid);
                
                bool headers_found = false;
                std::string scan { buffer, bytes };
                
-               if (APLOG_C_IS_LEVEL(f->c, request_log_level))
-                  ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_output_filter(): [%ld] scan = %s", tid, scan.c_str());
+               if (APLOG_R_IS_LEVEL(f->r, request_log_level))
+                  ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_output_filter(): [%ld] scan = %s", tid, scan.c_str());
 
                for (auto &header_re : headers_re)
                {
                   try
                   {
-                     std::smatch match;
-                     if (std::regex_search(scan, match, header_re))
+                     if (std::smatch match;
+                         std::regex_search(scan, match, header_re))
                      {                  
-                        if (APLOG_C_IS_LEVEL(f->c, request_log_level))
-                           ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_output_filter(): [%ld] found a response header to be excluded", tid);
+                        if (APLOG_R_IS_LEVEL(f->r, request_log_level))
+                           ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_output_filter(): [%ld] found a response header to be excluded", tid);
                            
                         // remove header
                         scan.erase(match.position(), match.length());
                         headers_found = true;
 
-                        if (APLOG_C_IS_LEVEL(f->c, request_log_level))
-                           ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_output_filter(): [%ld] removed found response header, new bucket length = %ld", tid, scan.length());
+                        if (APLOG_R_IS_LEVEL(f->r, request_log_level))
+                           ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_output_filter(): [%ld] removed found response header, new bucket length = %ld", tid, scan.length());
                      }
                   }
 
                   catch (const std::exception &e)
                   {
-                     if (APLOG_C_IS_LEVEL(f->c, request_log_level))
-                           ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_output_filter(): [%ld] search for response headers failed because of %s", tid, e.what());
+                     if (APLOG_R_IS_LEVEL(f->r, request_log_level))
+                           ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_output_filter(): [%ld] search for response headers failed because of %s", tid, e.what());
                   }
                }
 
                if (headers_found)
                {
-                  if (APLOG_C_IS_LEVEL(f->c, request_log_level))
-                     ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_output_filter(): [%ld] there is the need to override the current bucket", tid);
+                  if (APLOG_R_IS_LEVEL(f->r, request_log_level))
+                     ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_output_filter(): [%ld] there is the need to override the current bucket", tid);
                   
                   // add new bucket
                   if (!scan.empty())
                   {
-                     if (APLOG_C_IS_LEVEL(f->c, request_log_level))
-                        ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_output_filter(): [%ld] new bucket data = %s", tid, scan.c_str());
+                     if (APLOG_R_IS_LEVEL(f->r, request_log_level))
+                        ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_output_filter(): [%ld] new bucket data = %s", tid, scan.c_str());
 
                      // delete current bucket
                      apr_bucket *bt = APR_BUCKET_NEXT(b);
                      apr_bucket_delete(b);
                      b = bt;
-                     apr_bucket *ours = apr_bucket_pool_create(apr_pstrdup(f->r->pool, scan.c_str()), scan.length(), f->r->pool, f->c->bucket_alloc);
+                     char *bucket_data = new char[scan.length()];
+                     std::memcpy(bucket_data, scan.c_str(), scan.length());
+                     apr_bucket *ours = apr_bucket_heap_create(bucket_data, scan.length(), free_data, f->c->bucket_alloc);
                      APR_BUCKET_INSERT_BEFORE(b, ours);
                      b = ours;
                      
-                     if (APLOG_C_IS_LEVEL(f->c, request_log_level))
-                        ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_output_filter(): [%ld] current bucket deleted and new bucket added", tid);
+                     if (APLOG_R_IS_LEVEL(f->r, request_log_level))
+                        ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_output_filter(): [%ld] current bucket deleted and new bucket added", tid);
                   }
                }
 
-               if (APLOG_C_IS_LEVEL(f->c, request_log_level))
-                  ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_output_filter(): [%ld] scan for response headers to be removed done", tid);
+               if (APLOG_R_IS_LEVEL(f->r, request_log_level))
+                  ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_output_filter(): [%ld] scan for response headers to be removed done", tid);
 
                if (ctx->output_header)
                {
                   if (auto end_of_headers = scan.find("\r\n\r\n");
                       end_of_headers != std::string::npos)
                   {
-                     if (APLOG_C_IS_LEVEL(f->c, request_log_level))
-                        ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_output_filter(): [%ld] found the end of the header part [WINDOWS]", tid);
+                     if (APLOG_R_IS_LEVEL(f->r, request_log_level))
+                        ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_output_filter(): [%ld] found the end of the header part [WINDOWS]", tid);
                      ctx->output_header = false;
                   }
                   else if (end_of_headers = scan.find("\n\n");
                            end_of_headers != std::string::npos)
                   {
-                     if (APLOG_C_IS_LEVEL(f->c, request_log_level))
-                        ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_output_filter(): [%ld] found the end of the header part [UNIX/MACOS]", tid);
+                     if (APLOG_R_IS_LEVEL(f->r, request_log_level))
+                        ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_output_filter(): [%ld] found the end of the header part [UNIX/MACOS]", tid);
                      
                      ctx->output_header = false;
                   }
@@ -2765,12 +2825,12 @@ extern "C" int wt_output_filter_impl(ap_filter_t *f, apr_bucket_brigade *bb)
                // update module overhead for request
                module_overhead_for_current_request += ctx->elapsed;
 
-               if (APLOG_C_IS_LEVEL(f->c, request_log_level))
+               if (APLOG_R_IS_LEVEL(f->r, request_log_level))
                {
                   apr_time_t elapsed = end_filter - ctx->start_o;
-                  ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_output_filter(): [%ld] ELAPSED TIMES: total = %s, filter = %s",
+                  ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_output_filter(): [%ld] ELAPSED TIMES: total = %s, filter = %s",
                               tid, to_string(elapsed).c_str(), to_string(ctx->elapsed).c_str());
-                  ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_output_filter(): [%ld] end (ap_pass_brigade)", tid);
+                  ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_output_filter(): [%ld] end (ap_pass_brigade)", tid);
                }
 
                // Delete active filter context
@@ -2780,13 +2840,11 @@ extern "C" int wt_output_filter_impl(ap_filter_t *f, apr_bucket_brigade *bb)
                return ap_pass_brigade(f->next, bb);
             }
          }
-
-         ctx->elapsed += apr_time_now() - start_filter;
       }
       else
       {
-         if (APLOG_C_IS_LEVEL(f->c, request_log_level))
-            ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_output_filter(): [%ld] failure when reading from bucket (%d)", tid, rv);
+         if (APLOG_R_IS_LEVEL(f->r, request_log_level))
+            ap_log_rerror(APLOG_MARK, request_log_level, rv, f->r, "wt_output_filter(): [%ld] failure when reading from bucket", tid);
 
          // update elapsed times
          apr_time_t end_filter = apr_time_now();
@@ -2795,12 +2853,12 @@ extern "C" int wt_output_filter_impl(ap_filter_t *f, apr_bucket_brigade *bb)
          // update module overhead for request
          module_overhead_for_current_request += ctx->elapsed;
 
-         if (APLOG_C_IS_LEVEL(f->c, request_log_level))
+         if (APLOG_R_IS_LEVEL(f->r, request_log_level))
          {
             apr_time_t elapsed = end_filter - ctx->start_o;
-            ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_output_filter(): [%ld] ELAPSED TIMES: total = %s, filter = %s",
+            ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_output_filter(): [%ld] ELAPSED TIMES: total = %s, filter = %s",
                         tid, to_string(elapsed).c_str(), to_string(ctx->elapsed).c_str());
-            ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_output_filter(): [%ld] end (%d)", tid, rv);
+            ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_output_filter(): [%ld] end (%d)", tid, rv);
          }
 
          // Delete active filter context
@@ -2811,7 +2869,11 @@ extern "C" int wt_output_filter_impl(ap_filter_t *f, apr_bucket_brigade *bb)
       }
    }
 
-   if (APLOG_C_IS_LEVEL(f->c, request_log_level))
-      ap_log_cerror(APLOG_MARK, request_log_level, 0, f->c, "wt_output_filter(): [%ld] end (ap_pass_brigade)", tid);
+   // update elapsed output filter
+   ctx->elapsed += apr_time_now() - start_filter;
+
+   if (APLOG_R_IS_LEVEL(f->r, request_log_level))
+      ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_output_filter(): [%ld] end (ap_pass_brigade)", tid);
+   
    return ap_pass_brigade(f->next, bb);
 }

@@ -2,7 +2,8 @@
 
 /*
  * VERSION       DATE        DESCRIPTION
- * 2025.2.11.1  2025-02-11   Remove output headers from response body
+ * 2025.2.12.1  2025-02-12   Remove output headers from response body
+ *                           Fix memory allocations to remove leaks
  * 2025.2.10.2  2025-02-10   Implement request/responce cycle functions using C++23
  *                           Implement record file management in C++23
  *                           Change tracking data record format and contents
@@ -148,10 +149,12 @@ extern long syscall(long number, ...);
 module AP_MODULE_DECLARE_DATA web_tracking_module;
 
 // Enable log functions for module
+#ifdef APLOG_USE_MODULE
 APLOG_USE_MODULE(web_tracking);
+#endif
 
 // version
-const char *version = "Web Tracking Apache Module 2025.2.11.1 (C17/C++23)";
+const char *version = "Web Tracking Apache Module 2025.2.12.1 (C17/C++23)";
 
 wt_counter_t *wt_counter = 0;
 static apr_shm_t *shm_counter = 0;
