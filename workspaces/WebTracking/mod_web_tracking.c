@@ -2,8 +2,9 @@
 
 /*
  * VERSION       DATE        DESCRIPTION
- * 2025.2.12.1  2025-02-12   Remove output headers from response body
+ * 2025.2.13.1  2025-02-13   Remove output headers from response body
  *                           Fix memory allocations to remove leaks
+ *                           Enhance file management to reduce its overhead
  * 2025.2.10.2  2025-02-10   Implement request/responce cycle functions using C++23
  *                           Implement record file management in C++23
  *                           Change tracking data record format and contents
@@ -154,7 +155,7 @@ APLOG_USE_MODULE(web_tracking);
 #endif
 
 // version
-const char *version = "Web Tracking Apache Module 2025.2.12.1 (C17/C++23)";
+const char *version = "Web Tracking Apache Module 2025.2.13.1 (C17/C++23)";
 
 wt_counter_t *wt_counter = 0;
 static apr_shm_t *shm_counter = 0;
@@ -883,7 +884,7 @@ static void child_init(apr_pool_t *pchild, server_rec *s)
 
    // wt_record
    conf->log_enabled = wt_record_init(conf->record_folder, conf->record_archive_folder, conf->record_minutes);
-   if (APLOG_IS_LEVEL(s, APLOG_DEBUG)) ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, s, "child_init(): [%d] record folders initialized", pid);
+   if (APLOG_IS_LEVEL(s, APLOG_DEBUG)) ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, s, "child_init(): [%d] record folders, first file, and hot debug initialized", pid);
 
    // initialize regular epressions
    initialize_regular_expressions(conf);
