@@ -213,7 +213,14 @@ class wt_record
             clock_t current_time = time(NULL);
             uint64_t minutes_from_start = (current_time - start) / 60UL;
 
-            // is not beyond given minutes
+            // if the current file is still empty, reset the start value
+            if (current_size == 0)
+            {
+               start = current_time;
+               minutes_from_start = 0;
+            }
+
+            // the current file is not beyond given minutes and is not too big (> 1GB)
             if (minutes_from_start < minutes && current_size < 1'073'741'824)
             {
                std::println(out, "{}", text);
@@ -222,7 +229,7 @@ class wt_record
             }
             else
             {
-               // is beyond given minutes or is too big!
+               // the current file is beyond given minutes and is not too big (> 1GB)
                // close and move current file asynchronously
                close_and_move_file(true);
             }
