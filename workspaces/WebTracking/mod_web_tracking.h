@@ -51,8 +51,7 @@ struct wt_config_s {
   unsigned short body_limit;
   unsigned short enable_post_body;
 
-  const char *id;
-  const char *alt_id;
+  const char *hostname;
   const char *uuid_header;
   const char *ssl_indicator;
   const char *clientip_header;
@@ -124,8 +123,6 @@ static uri_table_t *add_uri_entry(apr_pool_t *, uri_table_t *, const char *,
 static void print_uri_table(server_rec *, uri_table_t *, const char *);
 static const uri_table_t *get_uri_table(uri_table_t *, const char *,
                                         const char *);
-static size_t base64encodelen(size_t);
-static size_t base64encode(const unsigned char *, size_t, unsigned char *);
 
 #endif
 

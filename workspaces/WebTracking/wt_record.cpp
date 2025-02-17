@@ -1,6 +1,3 @@
-// Linux Header File
-#include <unistd.h>
- 
 // Apache Web Server Header Files
 #include <apr_strings.h>
 #include <apr_file_io.h>
@@ -121,6 +118,7 @@ class wt_record
 {
    private:
       // class interface variables
+      inline static pid_t pid;
       inline static std::string folder;
       inline static std::string archive_folder;
       inline static unsigned int minutes;
@@ -154,8 +152,11 @@ class wt_record
       wt_record() = default;
       
       // initialize static variables
-      void init(const char *folder, const char *archive_folder, unsigned int minutes)
+      void init(pid_t pid, const char *folder, const char *archive_folder, unsigned int minutes)
       {
+         // pid
+         wt_record::pid = pid;
+
          // source folder
          if (folder) wt_record::folder.assign(folder);
          else wt_record::folder.assign(1, '.');
@@ -172,7 +173,7 @@ class wt_record
       void open_new_file()
       {
          // update variables
-         name = std::format("webtracking.{}.{}.log", getpid(), wt_record::sequence++);
+         name = std::format("webtracking.{}.{}.log", wt_record::pid, wt_record::sequence++);
          file_path.assign(wt_record::folder).append(1, '/').append(name);
 
          // open the first file
@@ -267,10 +268,10 @@ namespace
 }
 
 extern "C"
-unsigned short wt_record_init(const char *folder, const char *archive_folder, unsigned int minutes)
+unsigned short wt_record_init(pid_t pid, const char *folder, const char *archive_folder, unsigned int minutes)
 {
    // initialize static data
-   record.init(folder, archive_folder, minutes);
+   record.init(pid, folder, archive_folder, minutes);
 
    // initialize first file
    record.open_new_file();

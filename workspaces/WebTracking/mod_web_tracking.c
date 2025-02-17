@@ -2,9 +2,11 @@
 
 /*
  * VERSION       DATE        DESCRIPTION
- * 2025.2.14.1  2025-02-14   Remove output headers from response body
+ * 2025.2.17.1  2025-02-17   Remove output headers from response body
  *                           Fix memory allocations to remove leaks
  *                           Enhance file management to reduce its overhead
+ *                           Change uuid algorithm
+ *                           Remove directive WebTrackingID
  * 2025.2.10.2  2025-02-10   Implement request/responce cycle functions using C++23
  *                           Implement record file management in C++23
  *                           Change tracking data record format and contents
@@ -155,7 +157,7 @@ APLOG_USE_MODULE(web_tracking);
 #endif
 
 // version
-const char *version = "Web Tracking Apache Module 2025.2.14.1 (C17/C++23)";
+const char *version = "Web Tracking Apache Module 2025.2.17.1 (C17/C++23)";
 
 wt_counter_t *wt_counter = 0;
 static apr_shm_t *shm_counter = 0;
@@ -166,9 +168,13 @@ static void *create_server_config(apr_pool_t *p, server_rec *s)
 {
    wt_config_t *conf = apr_pcalloc(p, sizeof(wt_config_t));
 
+   char hostname[128 + 1] = { 0 };
+   gethostname(hostname, 128);
+   conf->hostname = apr_pstrdup(p, hostname);
+
    conf->disable = conf->inflate_response = conf->proxy = conf->enable_post_body = 0;
    conf->http = conf->https = 1;
-   conf->id = conf->alt_id = conf->uuid_header = conf->ssl_indicator = conf->clientip_header = conf->appid_header = NULL;
+   conf->uuid_header = conf->ssl_indicator = conf->clientip_header = conf->appid_header = NULL;
 
    conf->record_folder = NULL;
    conf->record_archive_folder = NULL;
@@ -190,106 +196,6 @@ static void *create_server_config(apr_pool_t *p, server_rec *s)
    apr_atomic_set32(&conf->response_with_compressed_bodies, 0);
 
    return conf;
-}
-
-static const char *wt_tracking_id(cmd_parms *cmd, void *dummy, const char *id)
-{
-   wt_config_t *conf = ap_get_module_config(cmd->server->module_config, &web_tracking_module);
-
-   if (conf->id != NULL)
-   {
-      return "ERROR: Web Tracking Apache Module: The directive WebTrackingID can be defined only once";
-   }
-
-   // Check ID syntax
-   ap_regex_t id_re;
-   /* ^!?[A-Za-z0-9._${}\-]{10,}$ */
-   ap_regcomp(&id_re, "^!?[A-Za-z0-9._${}\\-]{10,}$", AP_REG_EXTENDED);
-   ap_regmatch_t *id_pmatch = apr_pcalloc(cmd->pool, sizeof(ap_regmatch_t));
-
-   if (ap_regexec(&id_re, id, 1, id_pmatch, 0) == AP_REG_NOMATCH)
-   {
-      return "ERROR: Web Tracking Apache Module: The directive WebTrackingID is not syntactically correct (it must match '^!?[A-Za-z0-9._${}\\-]{10,}$')";
-   }
-
-   // ID begins with a '!'?
-   size_t id_pos = id[0] == '!';
-   id += id_pos;
-
-   // Environment references: ${<envvar>}
-   ap_regex_t env_re;
-   /* \$\{(\w+)\} */
-   ap_regcomp(&env_re, "\\$\\{(\\w+)\\}", AP_REG_EXTENDED);
-   size_t nmatch = 1 + 1;
-   ap_regmatch_t *env_pmatch = apr_pcalloc(cmd->pool, sizeof(ap_regmatch_t) * nmatch);
-
-   for (int i = 0; i < 5; ++i)
-   {
-      char *expanded = "";
-
-      size_t pos = 0;
-      while (pos < strlen(id))
-      {
-         int ret = ap_regexec(&env_re, id + pos, nmatch, env_pmatch, 0);
-
-         // Search & substitution terminated?
-         if (ret == AP_REG_NOMATCH)
-         {
-            expanded = apr_psprintf(cmd->pool, "%s%s", expanded, id + pos);
-            break;
-         }
-
-         size_t env_length = env_pmatch[1].rm_eo - env_pmatch[1].rm_so;
-         char *env = apr_pcalloc(cmd->pool, env_length + 1);
-         memcpy(env, id + pos + env_pmatch[1].rm_so, env_length);
-         env[env_length + 1] = 0;
-
-         const char *value = getenv(env);
-         if (value != NULL)
-         {
-            size_t pre_length = env_pmatch[0].rm_so - pos;
-            char *pre = apr_pcalloc(cmd->pool, pre_length + 1);
-            memcpy(pre, id + pos, pre_length);
-            pre[pre_length] = 0;
-
-            expanded = apr_psprintf(cmd->pool, "%s%s%s", expanded, pre, value);
-         }
-
-         pos += env_pmatch[0].rm_eo;
-      }
-
-      // nothing was changed?
-      if (!strcmp(id, expanded)) break;
-
-      id = expanded;
-   }
-
-   ap_regfree(&env_re);
-
-   // Check ID syntax after environment variables substitution
-   if (ap_regexec(&id_re, id, 1, id_pmatch, 0) == AP_REG_NOMATCH)
-   {
-      return "ERROR: Web Tracking Apache Module: The directive WebTrackingID generates a not syntactically correct value after environment variables substitution (it must match '^!?[A-Za-z0-9._${}\\-]{10,}$')";
-   }
-
-   ap_regfree(&id_re);
-
-   // Set id
-   conf->id = id;
-
-   // BASE64 encoding?
-   if (id_pos == 0)
-   {
-      size_t sid = base64encodelen(strlen(id));
-      char *base64_id = apr_pcalloc(cmd->pool, sid + 1);
-      memset(base64_id, 0, sid + 1);
-      base64encode((unsigned char *) id, strlen(id), (unsigned char *) base64_id);
-      char *eq = strchr(base64_id, '=');
-      if (eq != NULL) *eq = 0;
-      conf->id = base64_id;
-   }
-
-   return OK;
 }
 
 static const char *wt_tracking_uuid_header(cmd_parms *cmd, void *dummy, const char *header)
@@ -757,50 +663,6 @@ static const char *wt_application_id(cmd_parms *cmd, void *dummy, const char *ar
    return OK;
 }
 
-static const char *wt_get_listener(cmd_parms *cmd, void *dummy, const char *listener)
-{
-   char *host, *scope_id;
-   apr_port_t port;
-   apr_status_t rv;
-
-   wt_config_t *conf = ap_get_module_config(cmd->server->module_config, &web_tracking_module);
-   if (conf->alt_id) return OK;
-
-   rv = apr_parse_addr_port(&host, &scope_id, &port, listener, cmd->pool);
-   if (rv == APR_SUCCESS)
-   {
-      char hostname[256 + 1];
-
-      if (!host || !strcmp(host, "*"))
-      {
-         gethostname(hostname, sizeof(hostname));
-         host = hostname;
-      }
-
-      if (host[0] == '[')
-      {
-         ++host;
-         host[strlen(host) - 1] = 0;
-      }
-
-      char *alt_id = apr_psprintf(cmd->pool, "%s-%d", host, port);
-      char *p = NULL;
-      while ((p = strpbrk(alt_id, ".:")) != NULL) *p = '_';
-      for (p = alt_id; *p; ++p) if (apr_islower(*p)) *p = apr_toupper(*p);
-
-      size_t sid = base64encodelen(strlen(alt_id));
-      char *base64_id = apr_pcalloc(cmd->pool, sid + 1);
-      memset(base64_id, 0, sid + 1);
-      base64encode((unsigned char *) alt_id, strlen(alt_id), (unsigned char *) base64_id);
-      char *eq = strchr(base64_id, '=');
-      if (eq != NULL) *eq = 0;
-
-      conf->alt_id = base64_id;
-   }
-
-   return OK;
-}
-
 static apr_status_t wt_shm_cleanup(void *unused)
 {
    if (shm_counter) return apr_shm_destroy(shm_counter);
@@ -883,11 +745,11 @@ static void child_init(apr_pool_t *pchild, server_rec *s)
    }
 
    // wt_record
-   conf->log_enabled = wt_record_init(conf->record_folder, conf->record_archive_folder, conf->record_minutes);
+   conf->log_enabled = wt_record_init(pid, conf->record_folder, conf->record_archive_folder, conf->record_minutes);
    if (APLOG_IS_LEVEL(s, APLOG_DEBUG)) ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, s, "child_init(): [%d] record folders, first file, and hot debug initialized", pid);
 
    // initialize regular epressions
-   initialize_regular_expressions(conf);
+   initialize_pid_and_regular_expressions(pid, conf);
    if (APLOG_IS_LEVEL(s, APLOG_DEBUG)) ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, s, "child_init(): [%d] regular expression initialized", pid);
 
    // cleanup
@@ -916,12 +778,11 @@ static int post_config(apr_pool_t *pconf, apr_pool_t *plog, apr_pool_t *ptemp, s
 
    wt_config_t *conf = ap_get_module_config(s->module_config, &web_tracking_module);
 
-   if (conf->id == NULL) conf->id = conf->alt_id;
    if (conf->uuid_header == NULL) conf->uuid_header = "X-WT-UUID";
 
    if (is_main_process)
    {
-      const char *filename = apr_psprintf(ptemp, "logs/.shm_%s", conf->alt_id);
+      const char *filename = apr_psprintf(ptemp, "logs/.shm_%d", pid);
       const char *shm_filename = ap_server_root_relative(pconf, filename);
 
       if (apr_shm_create(&shm_counter, sizeof(wt_counter_t), shm_filename, pconf) == APR_SUCCESS ||
@@ -953,7 +814,7 @@ static int post_config(apr_pool_t *pconf, apr_pool_t *plog, apr_pool_t *ptemp, s
       // Print out configuration settings
       if (APLOG_IS_LEVEL(s, APLOG_INFO))
       { 
-         ap_log_error(APLOG_MARK, APLOG_INFO, 0, s, "web_tracking_module: [%d] id = %s", pid, conf->id);
+         ap_log_error(APLOG_MARK, APLOG_INFO, 0, s, "web_tracking_module: [%d] hostname = %s", pid, conf->hostname);
          ap_log_error(APLOG_MARK, APLOG_INFO, 0, s, "web_tracking_module: [%d] uuid header = %s", pid, (conf->uuid_header != NULL ? conf->uuid_header : "NULL"));
          ap_log_error(APLOG_MARK, APLOG_INFO, 0, s, "web_tracking_module: [%d] disable = %s", pid, (conf->disable == 1 ? "On" : "Off"));
          ap_log_error(APLOG_MARK, APLOG_INFO, 0, s, "web_tracking_module: [%d] http = %s", pid, (conf->http == 1 ? "On" : "Off"));
@@ -1030,18 +891,10 @@ static int post_config(apr_pool_t *pconf, apr_pool_t *plog, apr_pool_t *ptemp, s
 
          printf("WARNING: Web Tracking Apache Module: Both the directives WebTrackingHttpEnabled and WebTrackingHttpsEnabled are set to Off, so the tracking is disabled for all the requests\n");
       }
-
-      if (is_main_process && APLOG_IS_LEVEL(s, APLOG_INFO))
-         ap_log_error(APLOG_MARK, APLOG_INFO, 0, s, "WebTrackingID = %s (%s)", conf->id, (conf->id == conf->alt_id ? "generated by web tracking module" : "defined by user"));
-
    }
 
    // apachectl -t
-   if (!pconf)
-   {
-      printf("%s\n", version);
-      printf("WebTrackingID = %s (%s)\n", conf->id, (conf->id == conf->alt_id ? "generated by web tracking module" : "defined by user"));
-   }
+   if (!pconf) printf("%s\n", version);
 
    if (pconf && APLOG_IS_LEVEL(s, APLOG_DEBUG)) ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, s, "post_config(): [%d] end (OK)", pid);
 
@@ -1183,7 +1036,6 @@ static int wt_status_hook(request_rec *r, int flags)
       ap_rprintf(r, "         <h2>Web Tracking Apache Module</h2>\n");
       ap_rprintf(r, "         <dl>\n");
       ap_rprintf(r, "            <dt>Version: <b>%s</b></dt>", version);
-      ap_rprintf(r, "            <dt>WebTrackingID: <b>%s</b> (%s)</dt>\n", conf->id, (conf->id == conf->alt_id ? "generated by web tracking module" : "defined by user"));
       ap_rprintf(r, "         </dl>\n");
 
       char formatted[32];
@@ -1254,7 +1106,6 @@ static void register_hooks(apr_pool_t *p)
 
 static const command_rec config_cmds[] =
 {
-   AP_INIT_TAKE1("WebTrackingID", wt_tracking_id, NULL, RSRC_CONF, "WebTrackingID <string>"),
    AP_INIT_TAKE1("WebTrackingUuidHeader", wt_tracking_uuid_header, NULL, RSRC_CONF, "WebTrackingUuidHeader <string>"),
    AP_INIT_TAKE1("WebTrackingBodyLimit", wt_tracking_body_limit, NULL, RSRC_CONF, "WebTrackingLimitBody <number> MB"),
    AP_INIT_TAKE1("WebTrackingSSLIndicator", wt_tracking_ssl_indicator, NULL, RSRC_CONF, "WebTrackingSSLIndicator <string>"),
@@ -1285,7 +1136,6 @@ static const command_rec config_cmds[] =
    AP_INIT_TAKE1("WebTrackingRecordLifeTime", wt_record_life_time, NULL, RSRC_CONF, "WebTrackingRecordLifeTime <number in [5, 120]> minutes"),
    AP_INIT_TAKE1("WebTrackingApplicationIdFromHeader", wt_application_id_from_header,  NULL,  RSRC_CONF, "WebTrackingIdFromHeader <string>"),
    AP_INIT_RAW_ARGS("WebTrackingApplicationId", wt_application_id,  NULL,  RSRC_CONF, "WebTrackingApplicationId <string> <string> [<string>]"),
-   AP_INIT_ITERATE("Listen", wt_get_listener, NULL, RSRC_CONF, "A port number or a numeric IP address and a port number, and an optional protocol"),
    { NULL }
 };
 
@@ -1472,58 +1322,4 @@ uri_table_t *search_uri_table(uri_table_t *table, const char *host, const char *
    }
 
    return ret;
-}
-
-static const char *base64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-
-static size_t base64encodelen(size_t inlen)
-{
-   return ((inlen / 3) + ((inlen % 3) > 0)) * 4;
-}
-
-/*
-* output: must be of the correct size
-*/
-static size_t base64encode(const unsigned char *input, size_t inlen, unsigned char *output)
-{
-   size_t outlen = base64encodelen(inlen);
-   memset(output, '=', outlen);
-
-   for (size_t i = 0; i < inlen / 3; ++i)
-   {
-      size_t pi = i * 3;
-      size_t po = i * 4;
-
-      unsigned char a = (input[pi] >> 2) & 63;
-      unsigned char b = ((input[pi] & 3) << 4) + ((input[pi + 1] >> 4) & 15);
-      unsigned char c = ((input[pi + 1] & 15) << 2) + ((input[pi + 2] >> 6) & 3);
-      unsigned char d = input[pi + 2] & 63;
-
-      output[po] = base64[a];
-      output[po + 1] = base64[b];
-      output[po + 2] = base64[c];
-      output[po + 3] = base64[d];
-   }
-
-   unsigned char r = inlen % 3;
-
-   if (r == 1)
-   {
-      unsigned char a = (input[inlen - 1] >> 2) & 63;
-      unsigned char b = ((input[inlen - 1] & 3) << 4);
-      output[outlen - 4] = base64[a];
-      output[outlen - 3] = base64[b];
-   }
-   else
-   if (r == 2)
-   {
-      unsigned char a = (input[inlen - 2] >> 2) & 63;
-      unsigned char b = ((input[inlen - 2] & 3) << 4) + ((input[inlen - 1] >> 4) & 15);
-      unsigned char c = ((input[inlen - 1] & 15) << 2);
-      output[outlen - 4] = base64[a];
-      output[outlen - 3] = base64[b];
-      output[outlen - 2] = base64[c];
-   }
-
-   return outlen;
 }

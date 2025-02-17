@@ -8,7 +8,7 @@
         "/home/webihs/IHS/include"
       ],
       "defines": [],
-      "compilerPath": "/opt/rh/gcc-toolset-14/root/bin/g++",
+      "compilerPath": "/opt/rh/gcc-toolset-14/root/bin/gcc",
       "cStandard": "c17",
       "cppStandard": "c++23",
       "intelliSenseMode": "gcc-x64"
