@@ -1741,6 +1741,32 @@ extern "C" int log_transaction_impl(request_rec *r)
    return OK;
 }
 
+std::string url_encode(const std::string &value)
+{
+   std::ostringstream escaped;
+   escaped.fill('0');
+   escaped << std::hex;
+
+   for (std::string::const_iterator i = value.begin(), n = value.end(); i != n; ++i)
+   {
+       std::string::value_type c = (*i);
+
+       // Keep alphanumeric and other accepted characters intact
+       if (isalnum(c) || c == '-' || c == '_' || c == '.' || c == '~' || c == '=' || c == '&')
+       {
+           escaped << c;
+           continue;
+       }
+
+       // Any other characters are percent-encoded
+       escaped << std::uppercase;
+       escaped << '%' << std::setw(2) << int { static_cast<unsigned char>(c) };
+       escaped << std::nouppercase;
+   }
+
+   return escaped.str();
+}
+
 extern "C" int wt_input_filter_impl(ap_filter_t *f, apr_bucket_brigade *bb, ap_input_mode_t mode, apr_read_type_e block, apr_off_t readbytes)
 {
    // get host
@@ -1821,6 +1847,9 @@ extern "C" int wt_input_filter_impl(ap_filter_t *f, apr_bucket_brigade *bb, ap_i
                // Add as a query string and not as a request body
                if (APLOG_R_IS_LEVEL(f->r, request_log_level))
                   ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_input_filter(): [%ld] scan for query string parameters to be removed ...", thread_id);
+
+               // url encode query string
+               ctx->body.assign(url_encode(ctx->body));
 
                if (APLOG_R_IS_LEVEL(f->r, request_log_level))
                   ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_input_filter(): [%ld] body = %s", thread_id, ctx->body.c_str());
@@ -2136,6 +2165,9 @@ extern "C" int wt_input_filter_impl(ap_filter_t *f, apr_bucket_brigade *bb, ap_i
                   // Add as a query string and not as a request body
                   if (APLOG_R_IS_LEVEL(f->r, request_log_level))
                      ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_input_filter(): [%ld] scan for query string parameters to be removed ...", thread_id);
+
+                  // url encode query string
+                  ctx->body.assign(url_encode(ctx->body));
 
                   if (APLOG_R_IS_LEVEL(f->r, request_log_level))
                      ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_input_filter(): [%ld] body = %s", thread_id, ctx->body.c_str());
