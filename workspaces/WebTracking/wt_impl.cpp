@@ -792,6 +792,7 @@ extern "C" int post_read_request_impl(request_rec *r)
    // get host
    const char *host = apr_table_get(r->headers_in, "Host");
    if (!host) host = r->hostname;
+   if (!host) host = "-";
 
    request_log_level = is_debug_enabled(host, r->uri) ? APLOG_INFO : APLOG_DEBUG;
 
@@ -802,7 +803,6 @@ extern "C" int post_read_request_impl(request_rec *r)
       ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] Host = %s", thread_id, host);
       ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] URI = %s", thread_id, r->uri);
       ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] Protocol = %s", thread_id, r->protocol);
-      
    }
 
    // start timestamp
@@ -814,6 +814,19 @@ extern "C" int post_read_request_impl(request_rec *r)
       if (APLOG_R_IS_LEVEL(r, request_log_level))
          ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] end (DECLINED)", thread_id);
       return DECLINED;
+   }
+
+   // wrong protocol
+   if (std::strcmp(r->protocol, "HTTP/1.1"))
+   {
+      if (APLOG_R_IS_LEVEL(r, request_log_level))
+      {
+         std::string elapsed{to_string(apr_time_now() - start)};
+         ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] wrong protocol for web tracking", thread_id);
+         ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] end (OK) - %s", thread_id, elapsed.c_str());
+      }
+
+      return OK;
    }
 
    // retrieve configuration object
