@@ -780,20 +780,22 @@ extern "C" void initialize_pid_and_regular_expressions(pid_t pid, const wt_confi
 }
 
 // thread local storage class specifier variables
+thread_local pthread_t thread_id {};
 thread_local int request_log_level {};
 thread_local apr_time_t module_overhead_for_current_request {};
-thread_local  pthread_t thread_id {};
 thread_local SHA256 sha256 {};
 
 extern "C" int post_read_request_impl(request_rec *r)
-{
+try {
+   // thread local variable
    thread_id = syscall(SYS_gettid);
 
    // get host
    const char *host = apr_table_get(r->headers_in, "Host");
    if (!host) host = r->hostname;
    if (!host) host = "-";
-
+   
+   // thread local variable
    request_log_level = is_debug_enabled(host, r->uri) ? APLOG_INFO : APLOG_DEBUG;
 
    if (APLOG_R_IS_LEVEL(r, request_log_level))
@@ -831,6 +833,19 @@ extern "C" int post_read_request_impl(request_rec *r)
 
    // retrieve configuration object
    wt_config_t *conf = static_cast<wt_config_t *>(ap_get_module_config(r->server->module_config, &web_tracking_module));
+
+   // exist any conf?
+   if (!conf)
+   {
+      if (APLOG_R_IS_LEVEL(r, request_log_level))
+      {
+         std::string elapsed{to_string(apr_time_now() - start)};
+         ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] the web tracking has not any conf (how is it possible?)", thread_id);
+         ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] end (OK) - %s", thread_id, elapsed.c_str());
+      }
+
+      return OK;
+   }
 
    // is disabled?
    if (conf->disable)
@@ -1449,11 +1464,43 @@ extern "C" int post_read_request_impl(request_rec *r)
    return OK;
 }
 
-extern "C" int log_transaction_impl(request_rec *r)
+catch (const std::exception &err)
 {
+   // retrieve configuration object
+   wt_config_t *conf = static_cast<wt_config_t *>(ap_get_module_config(r->server->module_config, &web_tracking_module));
+
+   if (conf)
+   {
+      if (const char *uuid_for_request = apr_table_get(r->headers_in, conf->uuid_header);
+          uuid_for_request)
+      {
+         apr_table_unset(r->headers_in, conf->uuid_header);
+         delete[] uuid_for_request;
+      }
+   }
+
+   if (const char *data = apr_table_get(r->notes, "request_data");
+       data)
+   {
+      apr_table_unset(r->notes, "request_data");
+      delete[] data;
+   }
+
+   if (APLOG_R_IS_LEVEL(r, request_log_level))
+   {
+      ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] caught unexpected exception (cause: %s)", thread_id, err.what());
+      ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] end (DECLINED)", thread_id);
+   }
+
+   return DECLINED;
+}
+
+extern "C" int log_transaction_impl(request_rec *r)
+try {
    // get host
    const char *host = apr_table_get(r->headers_in, "Host");
    if (!host) host = r->hostname;
+   if (!host) host = "-";
 
    if (APLOG_R_IS_LEVEL(r, request_log_level))
    {
@@ -1480,7 +1527,20 @@ extern "C" int log_transaction_impl(request_rec *r)
       return DECLINED;
    }
 
-   if (!conf->log_enabled)
+   // exist any conf?
+   if (!conf)
+   {
+      if (APLOG_R_IS_LEVEL(r, request_log_level))
+      {
+         std::string elapsed{to_string(apr_time_now() - start)};
+         ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "log_transaction(): [%ld] the web tracking has not any conf (how is it possible?)", thread_id);
+         ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "log_transaction(): [%ld] end (OK) - %s", thread_id, elapsed.c_str());
+      }
+
+      return OK;
+   }
+
+   if (!conf || !conf->log_enabled)
    {
       if (APLOG_R_IS_LEVEL(r, request_log_level))
       {
@@ -1493,11 +1553,10 @@ extern "C" int log_transaction_impl(request_rec *r)
    }
 
    // get uuid
-   const char *uuid;
    if (APLOG_R_IS_LEVEL(r, request_log_level))
       ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "log_transaction(): [%ld] retrieve uuid", thread_id);
 
-   uuid = apr_table_get(r->headers_in, conf->uuid_header);
+   const char *uuid = apr_table_get(r->headers_in, conf->uuid_header);
    if (!uuid)
    {
       if (APLOG_R_IS_LEVEL(r, request_log_level))
@@ -1631,15 +1690,15 @@ extern "C" int log_transaction_impl(request_rec *r)
          ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "log_transaction(): [%ld] timestamp = %s", thread_id, timestamp.c_str());
 
       std::string record_data = format_string("\"%s\"|\"%s\"|\"%s\"|\"%s\"|%s", timestamp.c_str(), conf->hostname, uuid, appid, request_data);
-      delete[] request_data;
       apr_table_unset(r->notes, "request_data");
+      delete[] request_data;      
 
       // request body
       if (has_request_body)
       {
          record_data.append(1, '|').append(request_body_data);
-         delete[] request_body_data;
          apr_table_unset(r->notes, "request_body_data");
+         delete[] request_body_data;         
       }
 
       // response
@@ -1649,8 +1708,8 @@ extern "C" int log_transaction_impl(request_rec *r)
       if (has_response_body)
       {
          record_data.append(1, '|').append(response_body_data);
-         delete[] response_body_data;
          apr_table_unset(r->notes, "response_body_data");
+         delete[] response_body_data;         
       }
 
       if (APLOG_R_IS_LEVEL(r, request_log_level))
@@ -1719,6 +1778,7 @@ extern "C" int log_transaction_impl(request_rec *r)
       }
 
       // uuid
+      apr_table_unset(r->headers_in, conf->uuid_header);
       delete[] uuid;
    }
    else
@@ -1729,18 +1789,19 @@ extern "C" int log_transaction_impl(request_rec *r)
       // request body
       if (has_request_body)
       {
-         delete[] request_body_data;
          apr_table_unset(r->notes, "request_body_data");
+         delete[] request_body_data;
       }
 
       // response body
       if (has_response_body)
       {
-         delete[] response_body_data;
          apr_table_unset(r->notes, "response_body_data");
+         delete[] response_body_data;
       }
 
       // uuid
+      apr_table_unset(r->headers_in, conf->uuid_header);
       delete[] uuid;
    }
 
@@ -1752,6 +1813,51 @@ extern "C" int log_transaction_impl(request_rec *r)
    }
 
    return OK;
+}
+
+catch (const std::exception &err)
+{
+   // retrieve configuration object
+   wt_config_t *conf = static_cast<wt_config_t *>(ap_get_module_config(r->server->module_config, &web_tracking_module));
+
+   if (conf)
+   {
+      if (const char *uuid_for_request = apr_table_get(r->headers_in, conf->uuid_header);
+          uuid_for_request)
+      {
+         apr_table_unset(r->headers_in, conf->uuid_header);
+         delete[] uuid_for_request;
+      }
+   }
+
+   if (const char *data = apr_table_get(r->notes, "request_data");
+       data)
+   {
+      apr_table_unset(r->notes, "request_data");
+      delete[] data;
+   }
+
+   if (const char *data = apr_table_get(r->notes, "request_body_data");
+       data)
+   {
+      apr_table_unset(r->notes, "request_body_data");
+      delete[] data;
+   }
+
+   if (const char *data = apr_table_get(r->notes, "response_body_data");
+       data)
+   {
+      apr_table_unset(r->notes, "response_body_data");
+      delete[] data;
+   }
+
+   if (APLOG_R_IS_LEVEL(r, request_log_level))
+   {
+      ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "log_transaction(): [%ld] caught unexpected exception (cause: %s)", thread_id, err.what());
+      ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "log_transaction(): [%ld] end (DECLINED)", thread_id);
+   }
+
+   return DECLINED;
 }
 
 std::string url_encode(const std::string &value)
@@ -1781,10 +1887,11 @@ std::string url_encode(const std::string &value)
 }
 
 extern "C" int wt_input_filter_impl(ap_filter_t *f, apr_bucket_brigade *bb, ap_input_mode_t mode, apr_read_type_e block, apr_off_t readbytes)
-{
+try {
    // get host
    const char *host = apr_table_get(f->r->headers_in, "Host");
    if (!host) host = f->r->hostname;
+   if (!host) host = "-";
 
    if (APLOG_R_IS_LEVEL(f->r, request_log_level))
    {
@@ -1835,8 +1942,8 @@ extern "C" int wt_input_filter_impl(ap_filter_t *f, apr_bucket_brigade *bb, ap_i
          }
 
          // delete input filter context
-         delete ctx;
          f->ctx = nullptr;
+         delete ctx;
 
          return ap_get_brigade(f->next, bb, mode, block, readbytes);
       }
@@ -1959,8 +2066,8 @@ extern "C" int wt_input_filter_impl(ap_filter_t *f, apr_bucket_brigade *bb, ap_i
          }
 
          // Delete active filter context
-         delete ctx;
          f->ctx = nullptr;
+         delete ctx;
       }
       else
       {
@@ -1970,8 +2077,8 @@ extern "C" int wt_input_filter_impl(ap_filter_t *f, apr_bucket_brigade *bb, ap_i
          if (ctx->getline == 3)
          {
             // Delete active filter context
-            delete ctx;
             f->ctx = nullptr;
+            delete ctx;
          }
       }
 
@@ -2043,8 +2150,8 @@ extern "C" int wt_input_filter_impl(ap_filter_t *f, apr_bucket_brigade *bb, ap_i
          }
 
          // delete input filter context
-         delete ctx;
          f->ctx = nullptr;
+         delete ctx;
 
          return ap_get_brigade(f->next, bb, mode, block, readbytes);
       }
@@ -2116,8 +2223,8 @@ extern "C" int wt_input_filter_impl(ap_filter_t *f, apr_bucket_brigade *bb, ap_i
                         }
 
                         // Delete active filter context
-                        delete ctx;
                         f->ctx = nullptr;
+                        delete ctx;
 
                         return APR_SUCCESS;
                      }
@@ -2155,8 +2262,8 @@ extern "C" int wt_input_filter_impl(ap_filter_t *f, apr_bucket_brigade *bb, ap_i
                }
 
                // Delete active filter context
-               delete ctx;
                f->ctx = nullptr;
+               delete ctx;
 
                return rv;
             }
@@ -2281,8 +2388,8 @@ extern "C" int wt_input_filter_impl(ap_filter_t *f, apr_bucket_brigade *bb, ap_i
             ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_input_filter(): [%ld] end (APR_SUCCESS)", thread_id);
 
          // Delete active filter context
-         delete ctx;
          f->ctx = nullptr;
+         delete ctx;
 
          return APR_SUCCESS;
       }
@@ -2295,8 +2402,8 @@ extern "C" int wt_input_filter_impl(ap_filter_t *f, apr_bucket_brigade *bb, ap_i
          }
 
          // Delete active filter context
-         delete ctx;
          f->ctx = nullptr;
+         delete ctx;
 
          return ret;
       }
@@ -2310,6 +2417,55 @@ extern "C" int wt_input_filter_impl(ap_filter_t *f, apr_bucket_brigade *bb, ap_i
    }
 }
 
+catch (const std::exception &err)
+{
+   // retrieve filter context object
+   wt_input_filter_cpp *ctx = static_cast<wt_input_filter_cpp *>(f->ctx);
+
+   if (ctx)
+   {
+      if (const char *uuid_for_request = apr_table_get(f->r->headers_in, ctx->conf->uuid_header);
+          uuid_for_request)
+      {
+         apr_table_unset(f->r->headers_in, ctx->conf->uuid_header);
+         delete[] uuid_for_request;
+      }
+
+      f->ctx = nullptr;
+      delete ctx;      
+   }
+
+   if (const char *data = apr_table_get(f->r->notes, "request_data");
+       data)
+   {
+      apr_table_unset(f->r->notes, "request_data");
+      delete[] data;
+   }
+
+   if (const char *data = apr_table_get(f->r->notes, "request_body_data");
+       data)
+   {
+      apr_table_unset(f->r->notes, "request_body_data");
+      delete[] data;
+   }
+
+   // logically must be null
+   if (const char *data = apr_table_get(f->r->notes, "response_body_data");
+       data)
+   {
+      apr_table_unset(f->r->notes, "response_body_data");
+      delete[] data;
+   }
+
+   if (APLOG_R_IS_LEVEL(f->r, request_log_level))
+   {
+      ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_input_filter(): [%ld] caught unexpected exception (cause: %s)", thread_id, err.what());
+      ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_input_filter(): [%ld] end (ap_get_brigade)", thread_id);
+   }
+
+   return ap_get_brigade(f->next, bb, mode, block, readbytes);
+}
+
 void free_data(void *data)
 {
    char *to_be_deleted = static_cast<char *>(data);
@@ -2317,10 +2473,11 @@ void free_data(void *data)
 }
 
 extern "C" int wt_output_filter_impl(ap_filter_t *f, apr_bucket_brigade *bb)
-{
+try {
    // get host
    const char *host = apr_table_get(f->r->headers_in, "Host");
    if (!host) host = f->r->hostname;
+   if (!host) host = "-";
 
    if (APLOG_R_IS_LEVEL(f->r, request_log_level))
       ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_output_filter(): [%ld] start", thread_id);
@@ -2355,8 +2512,8 @@ extern "C" int wt_output_filter_impl(ap_filter_t *f, apr_bucket_brigade *bb)
       }
 
       // Delete active filter context
-      delete ctx;
       f->ctx = nullptr;
+      delete ctx;
 
       return ap_pass_brigade(f->next, bb);
    }
@@ -2371,8 +2528,8 @@ extern "C" int wt_output_filter_impl(ap_filter_t *f, apr_bucket_brigade *bb)
       }
 
       // Delete active filter context
-      delete ctx;
       f->ctx = nullptr;
+      delete ctx;
 
       return ap_pass_brigade(f->next, bb);
    }
@@ -2416,8 +2573,8 @@ extern "C" int wt_output_filter_impl(ap_filter_t *f, apr_bucket_brigade *bb)
                }
 
                // Delete active filter context
-               delete ctx;
                f->ctx = nullptr;
+               delete ctx;
 
                return ap_pass_brigade(f->next, bb);
             }
@@ -2463,8 +2620,8 @@ extern "C" int wt_output_filter_impl(ap_filter_t *f, apr_bucket_brigade *bb)
             }
 
             // Delete active filter context
-            delete ctx;
             f->ctx = nullptr;
+            delete ctx;
 
             return ap_pass_brigade(f->next, bb);
          }
@@ -2512,8 +2669,8 @@ extern "C" int wt_output_filter_impl(ap_filter_t *f, apr_bucket_brigade *bb)
                }
 
                // Delete active filter context
-               delete ctx;
                f->ctx = nullptr;
+               delete ctx;
 
                return ap_pass_brigade(f->next, bb);
             }
@@ -2672,8 +2829,8 @@ extern "C" int wt_output_filter_impl(ap_filter_t *f, apr_bucket_brigade *bb)
          }
 
          // Delete active filter context
+         f->ctx = nullptr;
          delete ctx;
-         f->ctx = nullptr;  
 
          if (APLOG_R_IS_LEVEL(f->r, request_log_level))
             ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_output_filter(): [%ld] end (ap_pass_brigade)", thread_id);
@@ -2719,8 +2876,8 @@ extern "C" int wt_output_filter_impl(ap_filter_t *f, apr_bucket_brigade *bb)
                   }
 
                   // Delete active filter context
-                  delete ctx;
                   f->ctx = nullptr;
+                  delete ctx;
                   
                   return ap_pass_brigade(f->next, bb);
                }
@@ -2880,8 +3037,8 @@ extern "C" int wt_output_filter_impl(ap_filter_t *f, apr_bucket_brigade *bb)
                }
 
                // Delete active filter context
-               delete ctx;
                f->ctx = nullptr;
+               delete ctx;
 
                return ap_pass_brigade(f->next, bb);
             }
@@ -2908,8 +3065,8 @@ extern "C" int wt_output_filter_impl(ap_filter_t *f, apr_bucket_brigade *bb)
          }
 
          // Delete active filter context
-         delete ctx;
          f->ctx = nullptr;
+         delete ctx;
 
          return rv;
       }
@@ -2921,5 +3078,54 @@ extern "C" int wt_output_filter_impl(ap_filter_t *f, apr_bucket_brigade *bb)
    if (APLOG_R_IS_LEVEL(f->r, request_log_level))
       ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_output_filter(): [%ld] end (ap_pass_brigade)", thread_id);
    
+   return ap_pass_brigade(f->next, bb);
+}
+
+catch (const std::exception &err)
+{
+   // retrieve filter object
+   wt_input_filter_cpp *ctx = static_cast<wt_input_filter_cpp *>(f->ctx);
+
+   if (ctx)
+   {
+      if (const char *uuid_for_request = apr_table_get(f->r->headers_in, ctx->conf->uuid_header);
+          uuid_for_request)
+      {
+         apr_table_unset(f->r->headers_in, ctx->conf->uuid_header);
+         delete[] uuid_for_request;
+      }
+
+      // Delete active filter context object
+      f->ctx = nullptr;
+      delete ctx;      
+   }
+
+   if (const char *data = apr_table_get(f->r->notes, "request_data");
+       data)
+   {
+      apr_table_unset(f->r->notes, "request_data");
+      delete[] data;
+   }
+
+   if (const char *data = apr_table_get(f->r->notes, "request_body_data");
+       data)
+   {
+      apr_table_unset(f->r->notes, "request_body_data");
+      delete[] data;
+   }
+
+   if (const char *data = apr_table_get(f->r->notes, "response_body_data");
+       data)
+   {
+      apr_table_unset(f->r->notes, "response_body_data");
+      delete[] data;
+   }
+
+   if (APLOG_R_IS_LEVEL(f->r, request_log_level))
+   {
+      ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_output_filter(): [%ld] caught unexpected exception (cause: %s)", thread_id, err.what());
+      ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_output_filter(): [%ld] end (ap_pass_brigade)", thread_id);
+   }
+
    return ap_pass_brigade(f->next, bb);
 }

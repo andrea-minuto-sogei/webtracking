@@ -2,7 +2,8 @@
 
 /*
  * VERSION       DATE        DESCRIPTION
- * 2025.2.19.1  2025.2.19.1  Remove tracking of request with protocol different than HTTP/1.1
+ * 2025.2.20.1  2025.2.20.1  Remove tracking of request with protocol different than HTTP/1.1
+ *                           Add exception guards for the main functions
  * 2025.2.18.1  2025-02-18   Remove output headers from response body
  *                           Fix memory allocations to remove leaks
  *                           Enhance file management to reduce its overhead
@@ -159,7 +160,7 @@ APLOG_USE_MODULE(web_tracking);
 #endif
 
 // version
-const char *version = "Web Tracking Apache Module 2025.2.19.1 (C17/C++23)";
+const char *version = "Web Tracking Apache Module 2025.2.20.1 (C17/C++23)";
 
 wt_counter_t *wt_counter = 0;
 static apr_shm_t *shm_counter = 0;
