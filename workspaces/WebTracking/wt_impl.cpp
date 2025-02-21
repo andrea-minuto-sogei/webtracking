@@ -781,6 +781,7 @@ extern "C" void initialize_pid_and_regular_expressions(pid_t pid, const wt_confi
 
 // thread local storage class specifier variables
 thread_local pthread_t thread_id {};
+thread_local const char *host { nullptr };
 thread_local int request_log_level {};
 thread_local apr_time_t module_overhead_for_current_request {};
 thread_local SHA256 sha256 {};
@@ -790,8 +791,8 @@ try {
    // thread local variable
    thread_id = syscall(SYS_gettid);
 
-   // get host
-   const char *host = apr_table_get(r->headers_in, "Host");
+   // get host (thread local variable)
+   if (const char *temp = apr_table_get(r->headers_in, "Host"); temp) host = temp;
    if (!host) host = r->hostname;
    if (!host) host = "-";
    
@@ -1497,11 +1498,6 @@ catch (const std::exception &err)
 
 extern "C" int log_transaction_impl(request_rec *r)
 try {
-   // get host
-   const char *host = apr_table_get(r->headers_in, "Host");
-   if (!host) host = r->hostname;
-   if (!host) host = "-";
-
    if (APLOG_R_IS_LEVEL(r, request_log_level))
    {
       ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "log_transaction(): [%ld] start", thread_id);
@@ -1888,11 +1884,6 @@ std::string url_encode(const std::string &value)
 
 extern "C" int wt_input_filter_impl(ap_filter_t *f, apr_bucket_brigade *bb, ap_input_mode_t mode, apr_read_type_e block, apr_off_t readbytes)
 try {
-   // get host
-   const char *host = apr_table_get(f->r->headers_in, "Host");
-   if (!host) host = f->r->hostname;
-   if (!host) host = "-";
-
    if (APLOG_R_IS_LEVEL(f->r, request_log_level))
    {
       ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_input_filter(): [%ld] start", thread_id);
@@ -2449,14 +2440,6 @@ catch (const std::exception &err)
       delete[] data;
    }
 
-   // logically must be null
-   if (const char *data = apr_table_get(f->r->notes, "response_body_data");
-       data)
-   {
-      apr_table_unset(f->r->notes, "response_body_data");
-      delete[] data;
-   }
-
    if (APLOG_R_IS_LEVEL(f->r, request_log_level))
    {
       ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_input_filter(): [%ld] caught unexpected exception (cause: %s)", thread_id, err.what());
@@ -2474,11 +2457,6 @@ void free_data(void *data)
 
 extern "C" int wt_output_filter_impl(ap_filter_t *f, apr_bucket_brigade *bb)
 try {
-   // get host
-   const char *host = apr_table_get(f->r->headers_in, "Host");
-   if (!host) host = f->r->hostname;
-   if (!host) host = "-";
-
    if (APLOG_R_IS_LEVEL(f->r, request_log_level))
       ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_output_filter(): [%ld] start", thread_id);
 

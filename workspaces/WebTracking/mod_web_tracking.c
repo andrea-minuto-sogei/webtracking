@@ -2,7 +2,7 @@
 
 /*
  * VERSION       DATE        DESCRIPTION
- * 2025.2.20.1  2025.2.20.1  Remove tracking of request with protocol different than HTTP/1.1
+ * 2025.2.21.1  2025.2.21.1  Remove tracking of request with protocol different than HTTP/1.1
  *                           Add exception guards for the main functions
  * 2025.2.18.1  2025-02-18   Remove output headers from response body
  *                           Fix memory allocations to remove leaks
@@ -160,7 +160,7 @@ APLOG_USE_MODULE(web_tracking);
 #endif
 
 // version
-const char *version = "Web Tracking Apache Module 2025.2.20.1 (C17/C++23)";
+const char *version = "Web Tracking Apache Module 2025.2.21.1 (C17/C++23)";
 
 wt_counter_t *wt_counter = 0;
 static apr_shm_t *shm_counter = 0;
@@ -171,8 +171,8 @@ static void *create_server_config(apr_pool_t *p, server_rec *s)
 {
    wt_config_t *conf = apr_pcalloc(p, sizeof(wt_config_t));
 
-   char hostname[128 + 1] = { 0 };
-   gethostname(hostname, 128);
+   char hostname[256 + 1] = { 0 };
+   gethostname(hostname, 256);
    conf->hostname = apr_pstrdup(p, hostname);
 
    conf->disable = conf->inflate_response = conf->proxy = conf->enable_post_body = 0;
