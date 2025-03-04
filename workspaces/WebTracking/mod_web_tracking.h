@@ -78,6 +78,9 @@ struct wt_config_s {
   uri_table_t *appid_table;
   uri_table_t *was_table;
 
+  // std::set<std::string>
+  void *exact_uri_set;
+
   const char *record_folder;
   const char *record_archive_folder;
   unsigned int record_minutes;
@@ -113,16 +116,14 @@ uri_table_t *search_uri_table(uri_table_t *, const char *, const char *);
 
 #ifndef __cplusplus
 
-static regex_table_t *add_regex(apr_pool_t *, regex_table_t *, ap_regex_t *,
-                                const char *);
+static regex_table_t *add_regex(apr_pool_t *, regex_table_t *, ap_regex_t *, const char *);
 static void print_regex_table(server_rec *, regex_table_t *, const char *);
 static value_table_t *add_value(apr_pool_t *, value_table_t *, const char *);
 static void print_value_table(server_rec *, value_table_t *, const char *);
-static uri_table_t *add_uri_entry(apr_pool_t *, uri_table_t *, const char *,
-                                  const char *, const char *);
+static uri_table_t *add_uri_entry(apr_pool_t *, uri_table_t *, const char *, const char *, const char *);
 static void print_uri_table(server_rec *, uri_table_t *, const char *);
-static const uri_table_t *get_uri_table(uri_table_t *, const char *,
-                                        const char *);
+static const uri_table_t *get_uri_table(uri_table_t *, const char *, const char *);
+static void print_set(server_rec *s, void *set, const char *prefix);
 
 #endif
 

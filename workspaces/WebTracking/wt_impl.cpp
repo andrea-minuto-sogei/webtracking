@@ -6,6 +6,7 @@
 #include <list>
 #include <cstdarg>
 #include <cstring>
+#include <set>
 
 namespace
 {
@@ -630,6 +631,8 @@ std::string wt_inflate(const std::string &in, int wrap)
    return plain;
 }
 
+bool contains_set(void *set, const char *value);
+
 int log_headers_cpp(void *rec, const char *key, const char *value)
 {
    record_cpp *record = static_cast<record_cpp *>(rec);
@@ -939,6 +942,34 @@ try {
    {
       if (APLOG_R_IS_LEVEL(r, request_log_level))
          ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] matched host = %s", thread_id, host_matched);
+   }
+
+   // check whether we got an exact uri to be tracked
+   if (contains_set(conf->exact_uri_set, r->uri))
+   {
+      if (APLOG_R_IS_LEVEL(r, request_log_level))
+         ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] no exact uris is matched against the current uri", thread_id);
+
+      if (!trace_uri)
+      {
+         if (APLOG_R_IS_LEVEL(r, request_log_level))
+         {
+            std::string elapsed { to_string(apr_time_now() - start) };
+            ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] end (OK) - %s", thread_id, elapsed.c_str());
+         }
+
+         return OK;
+      }
+      else
+      {
+         if (APLOG_R_IS_LEVEL(r, request_log_level))
+            ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] forced to continue cause at least a trace uri matched (%s)", thread_id, trace_uri_matched);
+      }
+   }
+   else
+   {
+      if (APLOG_R_IS_LEVEL(r, request_log_level))
+         ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] matched exact URI = %s", thread_id, r->uri);
    }
 
    // check whether we got an uri to be tracked
@@ -3106,4 +3137,40 @@ catch (const std::exception &err)
    }
 
    return ap_pass_brigade(f->next, bb);
+}
+
+extern "C" void *initialize_set()
+{
+   return new std::set<std::string>{};
+}
+
+extern "C" void add_to_set(void *set, const char *value)
+{
+   std::set<std::string> *local_set = static_cast<std::set<std::string> *>(set);
+   local_set->insert(value);
+}
+
+extern "C" const char ** to_string_set(void *set, unsigned long *length)
+{
+   std::set<std::string> *local_set = static_cast<std::set<std::string> *>(set);
+   
+   // empty
+   if (local_set->empty())
+   {
+      *length = 0;
+      return nullptr;
+   }
+   
+   // with values
+   *length = local_set->size();
+   const char ** array = new const char * [local_set->size()];
+   const char ** visit = array;
+   for (auto &value : *local_set) *visit++ = value.data();
+   return array;
+}
+
+bool contains_set(void *set, const char *value)
+{
+   std::set<std::string> *local_set = static_cast<std::set<std::string> *>(set);
+   return local_set->contains(value);
 }
