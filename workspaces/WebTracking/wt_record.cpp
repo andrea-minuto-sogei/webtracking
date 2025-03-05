@@ -165,6 +165,10 @@ class wt_record
          if (archive_folder) wt_record::archive_folder.assign(archive_folder);
          else wt_record::archive_folder.assign(wt_record::folder).append("/archives");
 
+         // create directories if they don't exist yet
+         std::filesystem::create_directories(wt_record::folder);
+         std::filesystem::create_directories(wt_record::archive_folder);
+
          // minutes to live
          wt_record::minutes = (minutes >= 5 && minutes <= 120) ? minutes : 30;
       }
@@ -286,6 +290,36 @@ unsigned short wt_record_init(pid_t pid, const char *folder, const char *archive
    hot_debug_thread.detach();
 
    return 1; /* OK */
+}
+
+#include <sys/statvfs.h>
+
+extern "C"
+unsigned short wt_record_check_filesystem(const char *folder, const char *archive_folder)
+{
+   // source folder
+   std::string source;
+   if (folder) source.assign(folder);
+   else source.assign(1, '.');
+
+   // archive/target folder
+   std::string archive;
+   if (archive_folder) archive.assign(archive_folder);
+   else archive.assign(source).append("/archives");
+
+   // create directories if they don't exist yet
+   std::filesystem::create_directories(source);
+   std::filesystem::create_directories(archive);
+
+   struct statvfs source_stat, archive_stat;
+   
+   if (!statvfs(source.c_str(), &source_stat) &&
+       !statvfs(archive.c_str(), &archive_stat))
+   {
+      if (source_stat.f_fsid == archive_stat.f_fsid) return 1; /* OK */
+   }
+
+   return 0; /* KO */
 }
 
 bool wt_record_write(const std::string &text)

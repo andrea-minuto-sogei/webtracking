@@ -2,7 +2,9 @@
 
 /*
  * VERSION       DATE        DESCRIPTION
- * 2025.3.4.1   2025-03-04   Add directive WebTrackingExactUri
+ * 2025.3.5.1   2025-03-05   Add directive WebTrackingExactUri
+ *                           Improve trace uri implementation
+ *                           Add folder directory creation at startup (it depends on permissions)
  * 2025.2.21.1  2025-02-21   Remove tracking of request with protocol different than HTTP/1.1
  *                           Add exception guards for the main functions
  * 2025.2.18.1  2025-02-18   Remove output headers from response body
@@ -161,7 +163,7 @@ APLOG_USE_MODULE(web_tracking);
 #endif
 
 // version
-const char *version = "Web Tracking Apache Module 2025.3.4.1 (C17/C++23)";
+const char *version = "Web Tracking Apache Module 2025.3.5.1 (C17/C++23)";
 
 wt_counter_t *wt_counter = 0;
 static apr_shm_t *shm_counter = 0;
@@ -193,7 +195,8 @@ static void *create_server_config(apr_pool_t *p, server_rec *s)
    conf->appid_table = conf->was_table = 0;
    conf->body_limit = 5;
 
-   conf->exact_uri_set = initialize_set();
+   // allocate value sets
+   conf->exact_uri_set = value_set_allocate();
 
    apr_atomic_set32(&conf->requests, 0);
    apr_atomic_set32(&conf->responses, 0);
@@ -369,7 +372,7 @@ static const char *wt_tracking_exact_uri(cmd_parms *cmd, void *dummy, const char
 {
    wt_config_t *conf = ap_get_module_config(cmd->server->module_config, &web_tracking_module);
 
-   add_to_set(conf->exact_uri_set, uri);
+   value_set_add(conf->exact_uri_set, uri);
 
    return OK;
 }
@@ -699,6 +702,9 @@ static apr_status_t child_exit(void *data)
    // retrieve config instance
    wt_config_t *conf = ap_get_module_config(s->module_config, &web_tracking_module);
 
+   // delete value sets
+   value_set_delete(conf->exact_uri_set);
+
    apr_status_t rtl = APR_ANYLOCK_LOCK(&conf->record_thread_mutex);
    if (rtl == APR_SUCCESS)
    {
@@ -853,7 +859,7 @@ static int post_config(apr_pool_t *pconf, apr_pool_t *plog, apr_pool_t *ptemp, s
          ap_log_error(APLOG_MARK, APLOG_INFO, 0, s, "web_tracking_module: [%d] ssl_indicator = %s", pid, conf->ssl_indicator);
       
       print_regex_table(s, conf->host_table, apr_psprintf(ptemp, "web_tracking_module: [%d] Host", pid));
-      print_set(s, conf->exact_uri_set, apr_psprintf(ptemp, "web_tracking_module: [%d] Exact URI", pid));
+      print_value_set(s, conf->exact_uri_set, apr_psprintf(ptemp, "web_tracking_module: [%d] Exact URI", pid));
       print_regex_table(s, conf->uri_table, apr_psprintf(ptemp, "web_tracking_module: [%d] URI", pid));
       print_regex_table(s, conf->exclude_uri_table, apr_psprintf(ptemp, "web_tracking_module: [%d] Exclude URI", pid));
       print_regex_table(s, conf->exclude_ip_table, apr_psprintf(ptemp, "web_tracking_module: [%d] Exclude IP", pid));
@@ -884,7 +890,7 @@ static int post_config(apr_pool_t *pconf, apr_pool_t *plog, apr_pool_t *ptemp, s
 
    if (!conf->trace_uri_table)
    {
-      if (conf->host_table == 0)
+      if (!conf->host_table)
       {
          if (pconf && APLOG_IS_LEVEL(s, APLOG_WARNING))
             ap_log_error(APLOG_MARK, APLOG_WARNING, 0, s, "WARNING: Web Tracking Apache Module: Not found any directive WebTrackingHost, so the tracking is disabled for all the requests");
@@ -892,12 +898,12 @@ static int post_config(apr_pool_t *pconf, apr_pool_t *plog, apr_pool_t *ptemp, s
          printf("WARNING: Web Tracking Apache Module: Not found any directive WebTrackingHost, so the tracking is disabled for all the requests\n");
       }
 
-      if (conf->uri_table == 0)
+      if (!conf->exact_uri_set && !conf->uri_table)
       {
          if (pconf && APLOG_IS_LEVEL(s, APLOG_WARNING))
-            ap_log_error(APLOG_MARK, APLOG_WARNING, 0, s, "WARNING: Web Tracking Apache Module: Not found any directive WebTrackingURI, so the tracking is disabled for all the requests");
+            ap_log_error(APLOG_MARK, APLOG_WARNING, 0, s, "WARNING: Web Tracking Apache Module: Not found neither any directive WebTrackingExactURI nor anydirective WebTrackingURI, so the tracking is disabled for all the requests");
 
-         printf("WARNING: Web Tracking Apache Module: Not found any directive WebTrackingURI, so the tracking is disabled for all the requests\n");
+         printf("WARNING: Web Tracking Apache Module: Not found neither any directive WebTrackingExactURI nor any directive WebTrackingURI, so the tracking is disabled for all the requests\n");
       }
 
       if (conf->http == 0 && conf->https == 0)
@@ -907,6 +913,14 @@ static int post_config(apr_pool_t *pconf, apr_pool_t *plog, apr_pool_t *ptemp, s
 
          printf("WARNING: Web Tracking Apache Module: Both the directives WebTrackingHttpEnabled and WebTrackingHttpsEnabled are set to Off, so the tracking is disabled for all the requests\n");
       }
+   }
+
+   if (!wt_record_check_filesystem(conf->record_folder, conf->record_archive_folder))
+   {
+      if (pconf && APLOG_IS_LEVEL(s, APLOG_WARNING))
+            ap_log_error(APLOG_MARK, APLOG_WARNING, 0, s, "WARNING: WebTrackingRecordFolder points to a filesystem different than WebTrackingRecordArchive, so the record files won't be moved");
+
+         printf("WARNING: WebTrackingRecordFolder points to a filesystem different than that pointed by WebTrackingRecordArchive, so the record files won't be moved\n");
    }
 
    // apachectl -t
@@ -1341,12 +1355,20 @@ uri_table_t *search_uri_table(uri_table_t *table, const char *host, const char *
    return ret;
 }
 
-static void print_set(server_rec *s, void *set, const char *prefix)
+static void print_value_set(server_rec *s, void *set, const char *prefix)
 {
-   if (APLOG_IS_LEVEL(s, APLOG_INFO) && set)
+   if (set)
    {
-      unsigned long length;
-      const char **array = to_string_set(set, &length);
-      for (int i = 0; i < length; ++i) ap_log_error(APLOG_MARK, APLOG_INFO, 0, s, "%s value = %s", prefix, array[i]);
+      if (APLOG_IS_LEVEL(s, APLOG_INFO))
+      {
+         unsigned long length = 0;
+         const char **array = value_set_to_array(set, &length);
+         
+         if (length)
+         {
+            for (int i = 0; i < length; ++i) ap_log_error(APLOG_MARK, APLOG_INFO, 0, s, "%s value = %s", prefix, array[i]);
+            value_set_delete_array(array);
+         }
+      }
    }
 }

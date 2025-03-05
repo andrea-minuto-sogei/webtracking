@@ -15,9 +15,12 @@ int log_transaction_impl(request_rec *r);
 int wt_input_filter_impl(ap_filter_t *f, apr_bucket_brigade *bb, ap_input_mode_t mode, apr_read_type_e block, apr_off_t readbytes);
 int wt_output_filter_impl(ap_filter_t *f, apr_bucket_brigade *bb);
 
-void *initialize_set();
-void add_to_set(void *set, const char *value);
-const char ** to_string_set(void *set, unsigned long *length);
+// std::set<std::string>
+void *value_set_allocate();
+void value_set_delete(void *set);
+void value_set_add(void *set, const char *value);
+const char **value_set_to_array(void *set, unsigned long *length);
+void value_set_delete_array(const char **array);
 
 #ifdef __cplusplus
 }

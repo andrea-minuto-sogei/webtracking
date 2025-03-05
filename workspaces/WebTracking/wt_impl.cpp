@@ -631,7 +631,7 @@ std::string wt_inflate(const std::string &in, int wrap)
    return plain;
 }
 
-bool contains_set(void *set, const char *value);
+bool value_set_contains(void *set, const char *value);
 
 int log_headers_cpp(void *rec, const char *key, const char *value)
 {
@@ -882,202 +882,14 @@ try {
    if (trace_uri_matched)
    {
       if (APLOG_R_IS_LEVEL(r, request_log_level))
-         ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] matched Trace URI = %s", thread_id, trace_uri_matched);
+         ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] matched trace uri = %s", thread_id, trace_uri_matched);
       trace_uri = true;
-   }
-
-   // check whether we got a disabling header
-   if (conf->header_off_table != 0)
-   {
-      for (value_table_t *t = conf->header_off_table; t != 0; t = t->next)
-      {
-         if (apr_table_get(r->headers_in, t->value))
-         {
-            if (APLOG_R_IS_LEVEL(r, request_log_level))
-               ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] found %s disabling header", thread_id, t->value);
-
-            if (!trace_uri)
-            {
-               if (APLOG_R_IS_LEVEL(r, request_log_level))
-               {
-                  std::string elapsed{to_string(apr_time_now() - start)};
-                  ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] end (OK) - %s", thread_id, elapsed.c_str());
-               }
-
-               return OK;
-            }
-            else
-            {
-               if (APLOG_R_IS_LEVEL(r, request_log_level))
-                  ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] forced to continue cause at least a trace uri matched (%s)", thread_id, trace_uri_matched);
-            }
-         }
-      }
-   }
-
-   // check whether we got an host to be tracked
-   if (const char *host_matched = search_regex_table(host, conf->host_table);
-       !host_matched)
-   {
-      if (APLOG_R_IS_LEVEL(r, request_log_level))
-         ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] no regex hosts is matched against the current request headers", thread_id);
-
-      if (!trace_uri)
-      {
-         if (APLOG_R_IS_LEVEL(r, request_log_level))
-         {
-            std::string elapsed { to_string(apr_time_now() - start) };
-            ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] end (OK) - %s", thread_id, elapsed.c_str());
-         }
-
-         return OK;
-      }
-      else
-      {
-         if (APLOG_R_IS_LEVEL(r, request_log_level))
-            ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] forced to continue cause at least a trace uri matched (%s)", thread_id, trace_uri_matched);
-      }
-   }
-   else
-   {
-      if (APLOG_R_IS_LEVEL(r, request_log_level))
-         ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] matched host = %s", thread_id, host_matched);
-   }
-
-   // check whether we got an exact uri to be tracked
-   if (contains_set(conf->exact_uri_set, r->uri))
-   {
-      if (APLOG_R_IS_LEVEL(r, request_log_level))
-         ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] no exact uris is matched against the current uri", thread_id);
-
-      if (!trace_uri)
-      {
-         if (APLOG_R_IS_LEVEL(r, request_log_level))
-         {
-            std::string elapsed { to_string(apr_time_now() - start) };
-            ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] end (OK) - %s", thread_id, elapsed.c_str());
-         }
-
-         return OK;
-      }
-      else
-      {
-         if (APLOG_R_IS_LEVEL(r, request_log_level))
-            ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] forced to continue cause at least a trace uri matched (%s)", thread_id, trace_uri_matched);
-      }
-   }
-   else
-   {
-      if (APLOG_R_IS_LEVEL(r, request_log_level))
-         ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] matched exact URI = %s", thread_id, r->uri);
-   }
-
-   // check whether we got an uri to be tracked
-   if (const char *uri_matched = search_regex_table(r->uri, conf->uri_table);
-       !uri_matched)
-   {
-      if (APLOG_R_IS_LEVEL(r, request_log_level))
-         ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] no regex uris is matched against the current uri", thread_id);
-
-      if (!trace_uri)
-      {
-         if (APLOG_R_IS_LEVEL(r, request_log_level))
-         {
-            std::string elapsed { to_string(apr_time_now() - start) };
-            ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] end (OK) - %s", thread_id, elapsed.c_str());
-         }
-
-         return OK;
-      }
-      else
-      {
-         if (APLOG_R_IS_LEVEL(r, request_log_level))
-            ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] forced to continue cause at least a trace uri matched (%s)", thread_id, trace_uri_matched);
-      }
-   }
-   else
-   {
-      if (APLOG_R_IS_LEVEL(r, request_log_level))
-         ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] matched URI = %s", thread_id, uri_matched);
-   }
-
-   // check whether we got an uri to be excluded
-   if (const char *exclude_uri_matched = search_regex_table(r->uri, conf->exclude_uri_table);
-       exclude_uri_matched)
-   {
-      if (APLOG_R_IS_LEVEL(r, request_log_level))
-      {
-         ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] matched Exclude URI = %s", thread_id, exclude_uri_matched);
-         ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] at least one regex exclude uri is matched against the current uri", thread_id);
-      }
-
-      if (!trace_uri)
-      {
-         if (APLOG_R_IS_LEVEL(r, request_log_level))
-         {
-            std::string elapsed { to_string(apr_time_now() - start) };
-            ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] end (OK) - %s", thread_id, elapsed.c_str());
-         }
-
-         return OK;
-      }
-      else
-      {
-         if (APLOG_R_IS_LEVEL(r, request_log_level))
-            ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] forced to continue cause at least a trace uri matched (%s)", thread_id, trace_uri_matched);
-      }
    }
 
    // get scheme
    const char *scheme = conn_is_https(r->connection, conf, r->headers_in) ? "https" : "http";
    if (APLOG_R_IS_LEVEL(r, request_log_level))
       ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] scheme = %s", thread_id, scheme);
-
-   // check whether we got a disabled https scheme
-   if (conf->https == 0 && std::strcmp(scheme, "https") == 0)
-   {
-      if (APLOG_R_IS_LEVEL(r, request_log_level))
-         ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] https scheme is disabled", thread_id);
-
-      if (!trace_uri)
-      {
-         if (APLOG_R_IS_LEVEL(r, request_log_level))
-         {
-            std::string elapsed { to_string(apr_time_now() - start) };
-            ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] end (OK) - %s", thread_id, elapsed.c_str());
-         }
-
-         return OK;
-      }
-      else
-      {
-         if (APLOG_R_IS_LEVEL(r, request_log_level))
-            ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] forced to continue cause at least a trace uri matched (%s)", thread_id, trace_uri_matched);
-      }
-   }
-
-   // check whether we got a disabled http scheme
-   if (conf->http == 0 && std::strcmp(scheme, "http") == 0)
-   {
-      if (APLOG_R_IS_LEVEL(r, request_log_level))
-         ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] http scheme is disabled", thread_id);
-
-      if (!trace_uri)
-      {
-         if (APLOG_R_IS_LEVEL(r, request_log_level))
-         {
-            std::string elapsed { to_string(apr_time_now() - start) };
-            ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] end (OK) - %s", thread_id, elapsed.c_str());
-         }
-
-         return OK;
-      }
-      else
-      {
-         if (APLOG_R_IS_LEVEL(r, request_log_level))
-            ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] forced to continue cause at least a trace uri matched (%s)", thread_id, trace_uri_matched);
-      }
-   }
 
    // get remote ip
    const char *remote_ip = r->useragent_ip;
@@ -1099,24 +911,38 @@ try {
       {
          if (APLOG_R_IS_LEVEL(r, request_log_level))
             ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] %s header is not present though the proxy management is enabled", thread_id, 
-                          conf->clientip_header ? conf->clientip_header : "X-Forwarded-For");
+                        conf->clientip_header ? conf->clientip_header : "X-Forwarded-For");
       }
    }
 
-   // check whether we got a remote ip to be excluded
-   if (const char *exclude_ip_matched = search_regex_table(remote_ip, conf->exclude_ip_table);
-       exclude_ip_matched)
+   if (!trace_uri)
    {
-      if (APLOG_R_IS_LEVEL(r, request_log_level))
+      // check whether we got a disabling header
+      if (conf->header_off_table != 0)
       {
-         ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] matched Exclude IP = %s", thread_id, exclude_ip_matched);
-         ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] at least one regex exclude ip is matched against the real remote ip", thread_id);
+         for (value_table_t *t = conf->header_off_table; t != 0; t = t->next)
+         {
+            if (apr_table_get(r->headers_in, t->value))
+            {
+               if (APLOG_R_IS_LEVEL(r, request_log_level))
+               {
+                  ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] found %s disabling header", thread_id, t->value);
+                  std::string elapsed{to_string(apr_time_now() - start)};
+                  ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] end (OK) - %s", thread_id, elapsed.c_str());
+               }
+
+               return OK;
+            }
+         }
       }
 
-      if (!trace_uri)
+      // check whether we got an host to be tracked
+      if (const char *host_matched = search_regex_table(host, conf->host_table);
+         !host_matched)
       {
          if (APLOG_R_IS_LEVEL(r, request_log_level))
          {
+            ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] no regex host is matched against the host request header", thread_id);
             std::string elapsed { to_string(apr_time_now() - start) };
             ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] end (OK) - %s", thread_id, elapsed.c_str());
          }
@@ -1126,7 +952,89 @@ try {
       else
       {
          if (APLOG_R_IS_LEVEL(r, request_log_level))
-            ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] forced to continue cause at least a trace uri matched (%s)", thread_id, trace_uri_matched);
+            ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] matched host = %s", thread_id, host_matched);
+      }
+
+      // check whether we got an exact uri to be tracked
+      if (!value_set_contains(conf->exact_uri_set, r->uri))
+      {
+         // check whether we got a regex uri to be tracked
+         if (const char *uri_matched = search_regex_table(r->uri, conf->uri_table);
+            !uri_matched)
+         {
+            if (APLOG_R_IS_LEVEL(r, request_log_level))
+            {
+               ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] neither exact uri nor regex uri is matched against the current uri", thread_id);
+               std::string elapsed { to_string(apr_time_now() - start) };
+               ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] end (OK) - %s", thread_id, elapsed.c_str());
+            }
+
+            return OK;
+         }
+         else
+         {
+            if (APLOG_R_IS_LEVEL(r, request_log_level))
+               ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] matched regex uri = %s", thread_id, uri_matched);
+         }
+      }
+      else
+      {
+         if (APLOG_R_IS_LEVEL(r, request_log_level))
+            ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] matched exact uri = %s", thread_id, r->uri);
+      }
+
+      // check whether we got an uri to be excluded
+      if (const char *exclude_uri_matched = search_regex_table(r->uri, conf->exclude_uri_table);
+         exclude_uri_matched)
+      {
+         if (APLOG_R_IS_LEVEL(r, request_log_level))
+         {
+            ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] matched exclude uri = %s", thread_id, exclude_uri_matched);
+            std::string elapsed { to_string(apr_time_now() - start) };
+            ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] end (OK) - %s", thread_id, elapsed.c_str());
+         }
+
+         return OK;
+      }
+
+      // check whether we got a disabled https scheme
+      if (conf->https == 0 && std::strcmp(scheme, "https") == 0)
+      {
+         if (APLOG_R_IS_LEVEL(r, request_log_level))
+         {
+            ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] https scheme is disabled", thread_id);
+            std::string elapsed { to_string(apr_time_now() - start) };
+            ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] end (OK) - %s", thread_id, elapsed.c_str());
+         }
+
+         return OK;
+      }
+
+      // check whether we got a disabled http scheme
+      if (conf->http == 0 && std::strcmp(scheme, "http") == 0)
+      {
+         if (APLOG_R_IS_LEVEL(r, request_log_level))
+         {
+            ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] http scheme is disabled", thread_id);
+            std::string elapsed { to_string(apr_time_now() - start) };
+            ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] end (OK) - %s", thread_id, elapsed.c_str());
+         }
+
+         return OK;
+      }
+
+      // check whether we got a remote ip to be excluded
+      if (const char *exclude_ip_matched = search_regex_table(remote_ip, conf->exclude_ip_table);
+         exclude_ip_matched)
+      {
+         if (APLOG_R_IS_LEVEL(r, request_log_level))
+         {
+            ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] matched exclude ip = %s", thread_id, exclude_ip_matched);
+            std::string elapsed { to_string(apr_time_now() - start) };
+            ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] end (OK) - %s", thread_id, elapsed.c_str());
+         }
+
+         return OK;
       }
    }
 
@@ -1225,9 +1133,9 @@ try {
    }
 
    // assess whether there is the need to enable a filter and prepare either one or both or none
-   bool input_filter = std::strcmp(r->method, "GET") != 0 && std::strcmp(r->method, "DELETE") != 0;
+   bool input_filter = trace_uri || (std::strcmp(r->method, "GET") != 0 && std::strcmp(r->method, "DELETE") != 0);
    bool output_filter = true;
-   bool output_header = !!conf->output_header_table;
+   bool output_header = trace_uri || !!conf->output_header_table;
 
    // print filter values out before checks
    if (APLOG_R_IS_LEVEL(r, request_log_level))
@@ -1238,84 +1146,57 @@ try {
       ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] output_header = %s", thread_id, to_char(output_header));
    }
 
-   // check whether we got an uri with excluded body
-   if (const char *exclude_uri_body_matched = search_regex_table(r->uri, conf->exclude_uri_body_table);
-       exclude_uri_body_matched)
-   {
-      if (APLOG_R_IS_LEVEL(r, request_log_level))
-         ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] matched Exclude URI Body = %s", thread_id, exclude_uri_body_matched);
-
-      if (!trace_uri)
-      {
-         input_filter = output_filter = false;
-         if (APLOG_R_IS_LEVEL(r, request_log_level))
-            ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] the body tracking will be disabled", thread_id);
-      }
-      else
-      {
-         if (APLOG_R_IS_LEVEL(r, request_log_level))
-            ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] forced to continue cause at least a trace uri matched (%s)", thread_id, trace_uri_matched);
-      }
-   }
-
-   // check whether we got a POST uri with excluded body
-   if (input_filter && std::strcmp(r->method, "POST") == 0)
-   {
-      if (const char *exclude_uri_post_matched = search_regex_table(r->uri, conf->exclude_uri_post_table);
-          exclude_uri_post_matched)
-      {
-         if (APLOG_R_IS_LEVEL(r, request_log_level))
-            ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] matched Exclude URI Post = %s", thread_id, exclude_uri_post_matched);
-
-         if (!trace_uri)
-         {
-            input_filter = false;
-            if (APLOG_R_IS_LEVEL(r, request_log_level))
-               ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] the body tracking will be disabled", thread_id);
-         }
-         else
-         {
-            if (APLOG_R_IS_LEVEL(r, request_log_level))
-               ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] forced to continue cause at least a trace uri matched (%s)", thread_id, trace_uri_matched);
-         }
-      }
-   }
-
    // get content length
    const char *content_length = apr_table_get(r->headers_in, "Content-Length");
    if (!content_length) content_length = "0";
+   unsigned long cl = std::stoul(content_length);
    if (APLOG_R_IS_LEVEL(r, request_log_level))
       ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] Content-Length = %s", thread_id, content_length);
 
-   // is input filter enabled?
-   unsigned long cl = std::stoul(content_length);
-   if (input_filter)
+   if (!trace_uri)
    {
-      unsigned long clinmb = cl / 1'048'576L;
-      if (APLOG_R_IS_LEVEL(r, request_log_level))
-         ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] content length in MB = %lu", thread_id, clinmb);
-
-      // check whether the body length exceeds the body limit
-      if (clinmb > conf->body_limit)
+      // check whether we got an uri with excluded body
+      if (const char *exclude_uri_body_matched = search_regex_table(r->uri, conf->exclude_uri_body_table);
+         exclude_uri_body_matched)
       {
-         if (APLOG_R_IS_LEVEL(r, request_log_level))
-            ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] the content-length is greater than the body limit", thread_id);
+         input_filter = output_filter = false;
 
-         if (!trace_uri)
+         if (APLOG_R_IS_LEVEL(r, request_log_level))
+            ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] matched exclude uri body = %s", thread_id, exclude_uri_body_matched);
+      }
+
+      // check whether we got a POST uri with excluded body
+      if (input_filter && std::strcmp(r->method, "POST") == 0)
+      {
+         if (const char *exclude_uri_post_matched = search_regex_table(r->uri, conf->exclude_uri_post_table);
+            exclude_uri_post_matched)
          {
             input_filter = false;
+
             if (APLOG_R_IS_LEVEL(r, request_log_level))
-               ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] the request body tracking won't be enabled", thread_id);
+               ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] matched exclude uri post = %s", thread_id, exclude_uri_post_matched);
          }
-         else
+      }
+
+      // is input filter enabled?
+      if (input_filter)
+      {
+         unsigned long clinmb = cl / 1'048'576L;
+         if (APLOG_R_IS_LEVEL(r, request_log_level))
+            ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] content length in MB = %lu", thread_id, clinmb);
+
+         // check whether the body length exceeds the body limit
+         if (clinmb > conf->body_limit)
          {
+            input_filter = false;
+
             if (APLOG_R_IS_LEVEL(r, request_log_level))
-               ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] forced to continue cause at least a trace uri matched (%s)", thread_id, trace_uri_matched);
+               ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] the content-length is greater than the body limit", thread_id);
          }
       }
    }
 
-   // print filter values out after some checks
+   // print filter values out after basic checks
    if (APLOG_R_IS_LEVEL(r, request_log_level))
    {
       ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] after checks", thread_id);
@@ -3139,38 +3020,66 @@ catch (const std::exception &err)
    return ap_pass_brigade(f->next, bb);
 }
 
-extern "C" void *initialize_set()
+extern "C" void *value_set_allocate()
 {
    return new std::set<std::string>{};
 }
 
-extern "C" void add_to_set(void *set, const char *value)
+extern "C" void value_set_delete(void *set)
 {
-   std::set<std::string> *local_set = static_cast<std::set<std::string> *>(set);
-   local_set->insert(value);
-}
-
-extern "C" const char ** to_string_set(void *set, unsigned long *length)
-{
-   std::set<std::string> *local_set = static_cast<std::set<std::string> *>(set);
-   
-   // empty
-   if (local_set->empty())
+   if (set)
    {
-      *length = 0;
-      return nullptr;
+      std::set<std::string> *local_set = static_cast<std::set<std::string> *>(set);
+      delete local_set;
    }
-   
-   // with values
-   *length = local_set->size();
-   const char ** array = new const char * [local_set->size()];
-   const char ** visit = array;
-   for (auto &value : *local_set) *visit++ = value.data();
-   return array;
 }
 
-bool contains_set(void *set, const char *value)
+extern "C" void value_set_add(void *set, const char *value)
 {
-   std::set<std::string> *local_set = static_cast<std::set<std::string> *>(set);
-   return local_set->contains(value);
+   if (set)
+   {
+      std::set<std::string> *local_set = static_cast<std::set<std::string> *>(set);
+      local_set->insert(value);
+   }
+}
+
+extern "C" const char **value_set_to_array(void *set, unsigned long *length)
+{
+   if (set)
+   {
+      std::set<std::string> *local_set = static_cast<std::set<std::string> *>(set);
+      
+      // empty
+      if (local_set->empty())
+      {
+         *length = 0;
+         return nullptr;
+      }
+      
+      // with values
+      *length = local_set->size();
+      const char **array = new const char *[local_set->size()];
+      unsigned int i = 0;
+      for (auto &value : *local_set) array[i++] = value.c_str();
+      return array;
+   }
+
+   *length = 0;
+   return nullptr;
+}
+
+extern "C" void value_set_delete_array(const char **array)
+{
+   if (array) delete [] array;
+}
+
+bool value_set_contains(void *set, const char *value)
+{
+   if (set)
+   {
+      std::set<std::string> *local_set = static_cast<std::set<std::string> *>(set);
+      return local_set->contains(value);
+   }
+
+   return false;
 }

@@ -15,7 +15,8 @@
 extern "C" {
 #endif
 
-struct regex_table_s {
+struct regex_table_s 
+{
   ap_regex_t *regex;
   const char *pattern;
   struct regex_table_s *next;
@@ -23,7 +24,8 @@ struct regex_table_s {
 
 typedef struct regex_table_s regex_table_t;
 
-struct uri_table_s {
+struct uri_table_s 
+{
   const char *uri;
   size_t uri_length;
   const char *host;
@@ -35,14 +37,16 @@ struct uri_table_s {
 
 typedef struct uri_table_s uri_table_t;
 
-struct value_table_s {
+struct value_table_s 
+{
   const char *value;
   struct value_table_s *next;
 };
 
 typedef struct value_table_s value_table_t;
 
-struct wt_config_s {
+struct wt_config_s 
+{
   unsigned short disable;
   unsigned short http;
   unsigned short https;
@@ -96,7 +100,8 @@ struct wt_config_s {
 
 typedef struct wt_config_s wt_config_t;
 
-struct wt_counter_s {
+struct wt_counter_s
+{
   apr_uint32_t requests;
   apr_uint32_t responses;
   apr_uint32_t request_bodies;
@@ -123,7 +128,7 @@ static void print_value_table(server_rec *, value_table_t *, const char *);
 static uri_table_t *add_uri_entry(apr_pool_t *, uri_table_t *, const char *, const char *, const char *);
 static void print_uri_table(server_rec *, uri_table_t *, const char *);
 static const uri_table_t *get_uri_table(uri_table_t *, const char *, const char *);
-static void print_set(server_rec *s, void *set, const char *prefix);
+static void print_value_set(server_rec *, void *, const char *);
 
 #endif
 
