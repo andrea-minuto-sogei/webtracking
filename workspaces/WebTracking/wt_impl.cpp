@@ -673,7 +673,7 @@ int log_headers_cpp(void *rec, const char *key, const char *value)
                {
                   // remove found cookies
                   std::smatch match;
-                  if (std::regex_search(header_value, match, parameter_re)) header_value.erase(match.position(), match.length());
+                  while (std::regex_search(header_value, match, parameter_re)) header_value.erase(match.position(), match.length());
                }
 
                catch (const std::exception &e)
@@ -694,7 +694,7 @@ int log_headers_cpp(void *rec, const char *key, const char *value)
                   {
                      // remove found cookies
                      std::smatch match;
-                     if (std::regex_search(header_value, match, parameter_re)) header_value.erase(match.position(), match.length());
+                     while (std::regex_search(header_value, match, parameter_re)) header_value.erase(match.position(), match.length());
                   }
 
                   catch (const std::exception &e)

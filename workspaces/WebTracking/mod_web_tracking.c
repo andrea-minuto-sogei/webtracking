@@ -2,6 +2,7 @@
 
 /*
  * VERSION       DATE        DESCRIPTION
+ * 2025.3.13.1  2025-03-13   Fix cookie removals
  * 2025.3.5.1   2025-03-05   Add directive WebTrackingExactUri
  *                           Improve trace uri implementation
  *                           Add folder directory creation at startup (it depends on permissions)
@@ -163,7 +164,7 @@ APLOG_USE_MODULE(web_tracking);
 #endif
 
 // version
-const char *version = "Web Tracking Apache Module 2025.3.5.1 (C17/C++23)";
+const char *version = "Web Tracking Apache Module 2025.3.13.1 (C17/C++23)";
 
 wt_counter_t *wt_counter = 0;
 static apr_shm_t *shm_counter = 0;
