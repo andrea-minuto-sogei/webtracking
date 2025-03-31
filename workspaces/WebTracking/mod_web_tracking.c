@@ -2,8 +2,10 @@
 
 /*
  * VERSION       DATE        DESCRIPTION
+ * 2025.3.25.1  2025-03-25   Add directive WebTrackingStartsWithURI
+ *                           Fix some minor bugs
  * 2025.3.13.1  2025-03-13   Fix cookie removals
- * 2025.3.5.1   2025-03-05   Add directive WebTrackingExactUri
+ * 2025.3.5.1   2025-03-05   Add directive WebTrackingExactURI
  *                           Improve trace uri implementation
  *                           Add folder directory creation at startup (it depends on permissions)
  * 2025.2.21.1  2025-02-21   Remove tracking of request with protocol different than HTTP/1.1
@@ -164,7 +166,7 @@ APLOG_USE_MODULE(web_tracking);
 #endif
 
 // version
-const char *version = "Web Tracking Apache Module 2025.3.13.1 (C17/C++23)";
+const char *version = "Web Tracking Apache Module 2025.3.25.1 (C17/C++23)";
 
 wt_counter_t *wt_counter = 0;
 static apr_shm_t *shm_counter = 0;
@@ -198,6 +200,7 @@ static void *create_server_config(apr_pool_t *p, server_rec *s)
 
    // allocate value sets
    conf->exact_uri_set = value_set_allocate();
+   conf->starts_with_uri_set = value_set_allocate();
 
    apr_atomic_set32(&conf->requests, 0);
    apr_atomic_set32(&conf->responses, 0);
@@ -374,6 +377,15 @@ static const char *wt_tracking_exact_uri(cmd_parms *cmd, void *dummy, const char
    wt_config_t *conf = ap_get_module_config(cmd->server->module_config, &web_tracking_module);
 
    value_set_add(conf->exact_uri_set, uri);
+
+   return OK;
+}
+
+static const char *wt_tracking_starts_with_uri(cmd_parms *cmd, void *dummy, const char *uri)
+{
+   wt_config_t *conf = ap_get_module_config(cmd->server->module_config, &web_tracking_module);
+
+   value_set_add(conf->starts_with_uri_set, uri);
 
    return OK;
 }
@@ -705,6 +717,7 @@ static apr_status_t child_exit(void *data)
 
    // delete value sets
    value_set_delete(conf->exact_uri_set);
+   value_set_delete(conf->starts_with_uri_set);
 
    apr_status_t rtl = APR_ANYLOCK_LOCK(&conf->record_thread_mutex);
    if (rtl == APR_SUCCESS)
@@ -861,6 +874,7 @@ static int post_config(apr_pool_t *pconf, apr_pool_t *plog, apr_pool_t *ptemp, s
       
       print_regex_table(s, conf->host_table, apr_psprintf(ptemp, "web_tracking_module: [%d] Host", pid));
       print_value_set(s, conf->exact_uri_set, apr_psprintf(ptemp, "web_tracking_module: [%d] Exact URI", pid));
+      print_value_set(s, conf->starts_with_uri_set, apr_psprintf(ptemp, "web_tracking_module: [%d] Starts With URI", pid));
       print_regex_table(s, conf->uri_table, apr_psprintf(ptemp, "web_tracking_module: [%d] URI", pid));
       print_regex_table(s, conf->exclude_uri_table, apr_psprintf(ptemp, "web_tracking_module: [%d] Exclude URI", pid));
       print_regex_table(s, conf->exclude_ip_table, apr_psprintf(ptemp, "web_tracking_module: [%d] Exclude IP", pid));
@@ -899,12 +913,12 @@ static int post_config(apr_pool_t *pconf, apr_pool_t *plog, apr_pool_t *ptemp, s
          printf("WARNING: Web Tracking Apache Module: Not found any directive WebTrackingHost, so the tracking is disabled for all the requests\n");
       }
 
-      if (!conf->exact_uri_set && !conf->uri_table)
+      if (!value_set_size(conf->exact_uri_set) && !value_set_size(conf->starts_with_uri_set) && !conf->uri_table)
       {
          if (pconf && APLOG_IS_LEVEL(s, APLOG_WARNING))
-            ap_log_error(APLOG_MARK, APLOG_WARNING, 0, s, "WARNING: Web Tracking Apache Module: Not found neither any directive WebTrackingExactURI nor anydirective WebTrackingURI, so the tracking is disabled for all the requests");
+            ap_log_error(APLOG_MARK, APLOG_WARNING, 0, s, "WARNING: Web Tracking Apache Module: Not found neither any directive WebTrackingExactURI nor any directive WebTrackingStartsWithURI nor any directive WebTrackingURI, so the tracking is disabled for all the requests");
 
-         printf("WARNING: Web Tracking Apache Module: Not found neither any directive WebTrackingExactURI nor any directive WebTrackingURI, so the tracking is disabled for all the requests\n");
+         printf("WARNING: Web Tracking Apache Module: Not found neither any directive WebTrackingExactURI nor any directive WebTrackingStartsWithURI nor any directive WebTrackingURI, so the tracking is disabled for all the requests\n");
       }
 
       if (conf->http == 0 && conf->https == 0)
@@ -1152,6 +1166,7 @@ static const command_rec config_cmds[] =
    AP_INIT_ITERATE("WebTrackingPrintEnvVar", wt_tracking_print_envvar, NULL, RSRC_CONF, "WebTrackingPrintEnvVar {<string>}+"),
    AP_INIT_ITERATE("WebTrackingURI", wt_tracking_uri, NULL, RSRC_CONF, "WebTrackingURI {<PCRE>}+"),
    AP_INIT_ITERATE("WebTrackingExactURI", wt_tracking_exact_uri, NULL, RSRC_CONF, "WebTrackingExactURI {<string}+"),
+   AP_INIT_ITERATE("WebTrackingStartsWithURI", wt_tracking_starts_with_uri, NULL, RSRC_CONF, "WebTrackingStartsWithURI {<string}+"),
    AP_INIT_ITERATE("WebTrackingExcludeURI", wt_tracking_exclude_uri, NULL, RSRC_CONF, "WebTrackingExcludeURI {<PCRE>}+"),
    AP_INIT_ITERATE("WebTrackingExcludeURIBody", wt_tracking_exclude_uri_body, NULL, RSRC_CONF, "WebTrackingExcludeURIBody {<PCRE>}+"),
    AP_INIT_ITERATE("WebTrackingExcludeURIPost", wt_tracking_exclude_uri_post, NULL, RSRC_CONF, "WebTrackingExcludeURIPost {<PCRE>}+"),

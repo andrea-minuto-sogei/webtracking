@@ -632,6 +632,7 @@ std::string wt_inflate(const std::string &in, int wrap)
 }
 
 bool value_set_contains(void *set, const char *value);
+const char *value_set_starts_with(void *set, const char *value);
 
 int log_headers_cpp(void *rec, const char *key, const char *value)
 {
@@ -958,23 +959,33 @@ try {
       // check whether we got an exact uri to be tracked
       if (!value_set_contains(conf->exact_uri_set, r->uri))
       {
-         // check whether we got a regex uri to be tracked
-         if (const char *uri_matched = search_regex_table(r->uri, conf->uri_table);
-            !uri_matched)
+         // check whether we got a starts with uri to be tracked
+         if (const char *uri_starts_with = value_set_starts_with(conf->starts_with_uri_set, r->uri);
+             !uri_starts_with)
          {
-            if (APLOG_R_IS_LEVEL(r, request_log_level))
+            // check whether we got a regex uri to be tracked
+            if (const char *uri_matched = search_regex_table(r->uri, conf->uri_table);
+               !uri_matched)
             {
-               ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] neither exact uri nor regex uri is matched against the current uri", thread_id);
-               std::string elapsed { to_string(apr_time_now() - start) };
-               ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] end (OK) - %s", thread_id, elapsed.c_str());
-            }
+               if (APLOG_R_IS_LEVEL(r, request_log_level))
+               {
+                  ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] neither exact uri nor starts with uri nor regex uri is matched against the current uri", thread_id);
+                  std::string elapsed { to_string(apr_time_now() - start) };
+                  ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] end (OK) - %s", thread_id, elapsed.c_str());
+               }
 
-            return OK;
+               return OK;
+            }
+            else
+            {
+               if (APLOG_R_IS_LEVEL(r, request_log_level))
+                  ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] matched regex uri = %s", thread_id, uri_matched);
+            }
          }
          else
          {
             if (APLOG_R_IS_LEVEL(r, request_log_level))
-               ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] matched regex uri = %s", thread_id, uri_matched);
+               ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] matched starts with uri = %s", thread_id, uri_starts_with);
          }
       }
       else
@@ -3043,6 +3054,17 @@ extern "C" void value_set_add(void *set, const char *value)
    }
 }
 
+extern "C" unsigned int value_set_size(void *set)
+{
+   if (set)
+   {
+      std::set<std::string> *local_set = static_cast<std::set<std::string> *>(set);
+      return local_set->size();
+   }
+
+   return 0;
+}
+
 extern "C" const char **value_set_to_array(void *set, unsigned long *length)
 {
    if (set)
@@ -3075,11 +3097,26 @@ extern "C" void value_set_delete_array(const char **array)
 
 bool value_set_contains(void *set, const char *value)
 {
-   if (set)
+   if (set && value)
    {
       std::set<std::string> *local_set = static_cast<std::set<std::string> *>(set);
       return local_set->contains(value);
    }
 
    return false;
+}
+
+const char *value_set_starts_with(void *set, const char *value)
+{
+   if (set && value)
+   {
+      std::string_view v_value { value };
+      std::set<std::string> *local_set = static_cast<std::set<std::string> *>(set);
+      for (const std::string &uri : *local_set)
+      {
+         if (v_value.starts_with(uri)) return uri.c_str();
+      }
+   }
+
+   return nullptr;
 }

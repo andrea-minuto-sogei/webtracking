@@ -84,6 +84,7 @@ struct wt_config_s
 
   // std::set<std::string>
   void *exact_uri_set;
+  void *starts_with_uri_set;
 
   const char *record_folder;
   const char *record_archive_folder;

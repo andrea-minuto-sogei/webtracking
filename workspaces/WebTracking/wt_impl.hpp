@@ -19,6 +19,7 @@ int wt_output_filter_impl(ap_filter_t *f, apr_bucket_brigade *bb);
 void *value_set_allocate();
 void value_set_delete(void *set);
 void value_set_add(void *set, const char *value);
+unsigned int value_set_size(void *set);
 const char **value_set_to_array(void *set, unsigned long *length);
 void value_set_delete_array(const char **array);
 
