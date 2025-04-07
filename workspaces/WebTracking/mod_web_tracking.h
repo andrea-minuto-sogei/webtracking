@@ -61,6 +61,8 @@ struct wt_config_s
   const char *clientip_header;
   const char *appid_header;
 
+  uri_table_t *appid_table;
+
   regex_table_t *uri_table;
   regex_table_t *exclude_ip_table;
   regex_table_t *exclude_uri_table;
@@ -70,21 +72,20 @@ struct wt_config_s
   regex_table_t *host_table;
   regex_table_t *content_table;
 
-  value_table_t *header_off_table;
-  value_table_t *output_header_table;
-  value_table_t *envvar_table;
-  value_table_t *request_header_table;
-  value_table_t *header_table;
-  value_table_t *header_value_table;
-  value_table_t *exclude_cookie_table;
-  value_table_t *exclude_parameter_table;
-
-  uri_table_t *appid_table;
-  uri_table_t *was_table;
-
   // std::set<std::string>
+  void *header_off_set;
+  void *output_header_set;
+  void *envvar_set;
+  void *request_header_set;
+  void *header_set;
+  void *header_value_set;
+  void *exclude_cookie_set;
+  void *exclude_parameter_set;
   void *exact_uri_set;
   void *starts_with_uri_set;
+  void *exclude_exact_uri_set;
+  void *exclude_starts_with_uri_set;
+  void *exact_host_set;
 
   const char *record_folder;
   const char *record_archive_folder;
@@ -124,8 +125,6 @@ uri_table_t *search_uri_table(uri_table_t *, const char *, const char *);
 
 static regex_table_t *add_regex(apr_pool_t *, regex_table_t *, ap_regex_t *, const char *);
 static void print_regex_table(server_rec *, regex_table_t *, const char *);
-static value_table_t *add_value(apr_pool_t *, value_table_t *, const char *);
-static void print_value_table(server_rec *, value_table_t *, const char *);
 static uri_table_t *add_uri_entry(apr_pool_t *, uri_table_t *, const char *, const char *, const char *);
 static void print_uri_table(server_rec *, uri_table_t *, const char *);
 static const uri_table_t *get_uri_table(uri_table_t *, const char *, const char *);

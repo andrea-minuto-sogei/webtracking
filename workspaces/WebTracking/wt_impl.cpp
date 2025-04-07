@@ -640,19 +640,18 @@ int log_headers_cpp(void *rec, const char *key, const char *value)
 
    unsigned short is_printable = 1;
 
-   if (record->conf->header_table)
+   if (record->conf->header_set)
    {
-      for (value_table_t *scan = record->conf->header_table; scan; scan = scan->next)
-      {
-         if (!strcasecmp(key, scan->value)) return 1;
-      }
+      std::set<std::string> *local_set = static_cast<std::set<std::string> *>(record->conf->header_set);
+      for (const std::string &header : *local_set) if (!strcasecmp(key, header.c_str())) return 1;
    }
 
-   if (record->conf->header_value_table)
+   if (record->conf->header_value_set)
    {
-      for (value_table_t *scan = record->conf->header_value_table; scan; scan = scan->next)
+      std::set<std::string> *local_set = static_cast<std::set<std::string> *>(record->conf->header_value_set);
+      for (const std::string &header : *local_set)
       {
-         if (!strcasecmp(key, scan->value))
+         if (!strcasecmp(key, header.c_str()))
          {
             is_printable = 0;
             break;
@@ -666,7 +665,7 @@ int log_headers_cpp(void *rec, const char *key, const char *value)
    {
       if (!strcasecmp(key, "Cookie"))
       {
-         if (record->conf->exclude_cookie_table)
+         if (record->conf->exclude_cookie_set)
          {
             for (auto &parameter_re : cookies_re)
             {
@@ -685,9 +684,9 @@ int log_headers_cpp(void *rec, const char *key, const char *value)
       }
       else if (!strcasecmp(key, "Set-Cookie"))
       {
-         if (record->conf->exclude_cookie_table)
+         if (record->conf->exclude_cookie_set)
          {
-            if (record->conf->exclude_cookie_table)
+            if (record->conf->exclude_cookie_set)
             {
                for (auto &parameter_re : set_cookies_re)
                {
@@ -729,11 +728,12 @@ int log_envvars_cpp(void *rec, const char *key, const char *value)
 {
    record_cpp *record = static_cast<record_cpp *>(rec);
 
-   if (record->conf->envvar_table)
+   if (record->conf->envvar_set)
    {
-      for (value_table_t *scan = record->conf->envvar_table; scan; scan = scan->next)
+      std::set<std::string> *local_set = static_cast<std::set<std::string> *>(record->conf->envvar_set);
+      for (const std::string &envvar : *local_set)
       {
-         if (!strcasecmp(key, scan->value))
+         if (!strcasecmp(key, envvar.c_str()))
          {
             record->data.append(format_string("|\"ENV: %s=%s\"", key, value));
             return 1;
@@ -755,31 +755,38 @@ extern "C" void initialize_pid_and_regular_expressions(pid_t pid, const wt_confi
    process_id = pid;
 
    // cookies
-   for (value_table_t *t = conf->exclude_cookie_table; t != 0; t = t->next)
+   if (conf->exclude_cookie_set)
    {
-      try { cookies_re.push_back(std::regex { std::format(cookie_pattern, t->value) }); }
-      catch (const std::exception &e) {}
-   }
-
-   // set-cookies
-   for (value_table_t *t = conf->exclude_cookie_table; t != 0; t = t->next)
-   {
-      try { set_cookies_re.push_back(std::regex { std::format(set_cookie_pattern, t->value) }); }
-      catch (const std::exception &e) {}
+      std::set<std::string> *local_set = static_cast<std::set<std::string> *>(conf->exclude_cookie_set);
+      for (const std::string &cookie : *local_set)
+      {
+         try { cookies_re.push_back(std::regex { std::format(cookie_pattern, cookie) }); }
+         catch (const std::exception &e) {}
+         try { set_cookies_re.push_back(std::regex { std::format(set_cookie_pattern, cookie) }); }
+         catch (const std::exception &e) {}
+      }
    }
 
    // parameters
-   for (value_table_t *t = conf->exclude_parameter_table; t != 0; t = t->next)
+   if (conf->exclude_parameter_set)
    {
-      try { parameters_re.push_back(std::regex { std::format(parameter_pattern, t->value) }); }
-      catch (const std::exception &e) {}
+      std::set<std::string> *local_set = static_cast<std::set<std::string> *>(conf->exclude_parameter_set);
+      for (const std::string &parameter : *local_set)
+      {
+         try { parameters_re.push_back(std::regex { std::format(parameter_pattern, parameter) }); }
+         catch (const std::exception &e) {}   
+      }
    }
-
+   
    // headers
-   for (value_table_t *t = conf->output_header_table; t != 0; t = t->next)
+   if (conf->output_header_set)
    {
-      try { headers_re.push_back(std::regex { std::format(header_pattern, t->value), std::regex::icase }); }
-      catch (const std::exception &e) {}
+      std::set<std::string> *local_set = static_cast<std::set<std::string> *>(conf->output_header_set);
+      for (const std::string &header: *local_set)
+      {
+         try { headers_re.push_back(std::regex { std::format(header_pattern, header), std::regex::icase }); }
+         catch (const std::exception &e) {}
+      }
    }
 }
 
@@ -919,15 +926,16 @@ try {
    if (!trace_uri)
    {
       // check whether we got a disabling header
-      if (conf->header_off_table != 0)
+      if (conf->header_off_set)
       {
-         for (value_table_t *t = conf->header_off_table; t != 0; t = t->next)
+         std::set<std::string> *local_set = static_cast<std::set<std::string> *>(conf->header_off_set);
+         for (const std::string &header: *local_set)
          {
-            if (apr_table_get(r->headers_in, t->value))
+            if (apr_table_get(r->headers_in, header.c_str()))
             {
                if (APLOG_R_IS_LEVEL(r, request_log_level))
                {
-                  ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] found %s disabling header", thread_id, t->value);
+                  ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] found %s disabling header", thread_id, header.c_str());
                   std::string elapsed{to_string(apr_time_now() - start)};
                   ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] end (OK) - %s", thread_id, elapsed.c_str());
                }
@@ -937,23 +945,32 @@ try {
          }
       }
 
-      // check whether we got an host to be tracked
-      if (const char *host_matched = search_regex_table(host, conf->host_table);
-         !host_matched)
+      // check whether we got an exact uri to be tracked
+      if (!value_set_contains(conf->exact_host_set, host))
       {
-         if (APLOG_R_IS_LEVEL(r, request_log_level))
+         // check whether we got an host to be tracked
+         if (const char *host_matched = search_regex_table(host, conf->host_table);
+            !host_matched)
          {
-            ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] no regex host is matched against the host request header", thread_id);
-            std::string elapsed { to_string(apr_time_now() - start) };
-            ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] end (OK) - %s", thread_id, elapsed.c_str());
-         }
+            if (APLOG_R_IS_LEVEL(r, request_log_level))
+            {
+               ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] neither exact host nor regex host is matched against the host request header", thread_id);
+               std::string elapsed { to_string(apr_time_now() - start) };
+               ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] end (OK) - %s", thread_id, elapsed.c_str());
+            }
 
-         return OK;
+            return OK;
+         }
+         else
+         {
+            if (APLOG_R_IS_LEVEL(r, request_log_level))
+               ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] matched host = %s", thread_id, host_matched);
+         }
       }
       else
       {
          if (APLOG_R_IS_LEVEL(r, request_log_level))
-            ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] matched host = %s", thread_id, host_matched);
+            ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] matched exact host = %s", thread_id, host);
       }
 
       // check whether we got an exact uri to be tracked
@@ -992,6 +1009,33 @@ try {
       {
          if (APLOG_R_IS_LEVEL(r, request_log_level))
             ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] matched exact uri = %s", thread_id, r->uri);
+      }
+
+      // check whether we got an exact uri to be excluded
+      if (value_set_contains(conf->exclude_exact_uri_set, r->uri))
+      {
+         if (APLOG_R_IS_LEVEL(r, request_log_level))
+         {
+            ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] matched exact exclude uri = %s", thread_id, r->uri);
+            std::string elapsed { to_string(apr_time_now() - start) };
+            ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] end (OK) - %s", thread_id, elapsed.c_str());
+         }
+
+         return OK;
+      }
+
+      // check whether we got a starts with uri to be excluded
+      if (const char *exclude_uri_starts_with_matched = value_set_starts_with(conf->exclude_starts_with_uri_set, r->uri);
+         exclude_uri_starts_with_matched)
+      {
+         if (APLOG_R_IS_LEVEL(r, request_log_level))
+         {
+            ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] matched starts with exclude uri = %s", thread_id, exclude_uri_starts_with_matched);
+            std::string elapsed { to_string(apr_time_now() - start) };
+            ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] end (OK) - %s", thread_id, elapsed.c_str());
+         }
+
+         return OK;
       }
 
       // check whether we got an uri to be excluded
@@ -1087,7 +1131,7 @@ try {
    // add environment variable if enabled
    if (APLOG_R_IS_LEVEL(r, request_log_level))
       ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] print environment variables ...", thread_id);
-   if (conf->envvar_table) apr_table_do(log_envvars_cpp, &record, r->subprocess_env, NULL);
+   if (conf->envvar_set) apr_table_do(log_envvars_cpp, &record, r->subprocess_env, NULL);
 
    // either get or build an uuid
    if (APLOG_R_IS_LEVEL(r, request_log_level))
@@ -1146,7 +1190,7 @@ try {
    // assess whether there is the need to enable a filter and prepare either one or both or none
    bool input_filter = trace_uri || (std::strcmp(r->method, "GET") != 0 && std::strcmp(r->method, "DELETE") != 0);
    bool output_filter = true;
-   bool output_header = trace_uri || !!conf->output_header_table;
+   bool output_header = trace_uri || !!conf->output_header_set;
 
    // print filter values out before checks
    if (APLOG_R_IS_LEVEL(r, request_log_level))
@@ -1529,7 +1573,7 @@ try {
    // add environment variable if enabled
    if (APLOG_R_IS_LEVEL(r, request_log_level))
       ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "log_transaction(): [%ld] print environment variables ...", thread_id);
-   if (conf->envvar_table) apr_table_do(log_envvars_cpp, &record, r->subprocess_env, NULL);
+   if (conf->envvar_set) apr_table_do(log_envvars_cpp, &record, r->subprocess_env, NULL);
 
    if (APLOG_R_IS_LEVEL(r, request_log_level))
       ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "log_transaction(): [%ld] **** START END OF RESPONSE ****", thread_id);

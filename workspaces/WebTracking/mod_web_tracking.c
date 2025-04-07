@@ -2,6 +2,9 @@
 
 /*
  * VERSION       DATE        DESCRIPTION
+ * 2025.4.7.1   2025-04-07   Add directive WebTrackingExcludeExactURI
+ *                           Add directive WebTrackingExcludeStartsWithURI
+ *                           Add directive WebTrackingExactHost
  * 2025.3.25.1  2025-03-25   Add directive WebTrackingStartsWithURI
  *                           Fix some minor bugs
  * 2025.3.13.1  2025-03-13   Fix cookie removals
@@ -166,7 +169,7 @@ APLOG_USE_MODULE(web_tracking);
 #endif
 
 // version
-const char *version = "Web Tracking Apache Module 2025.3.25.1 (C17/C++23)";
+const char *version = "Web Tracking Apache Module 2025.4.7.1 (C17/C++23)";
 
 wt_counter_t *wt_counter = 0;
 static apr_shm_t *shm_counter = 0;
@@ -192,15 +195,24 @@ static void *create_server_config(apr_pool_t *p, server_rec *s)
 
    conf->uri_table = conf->exclude_ip_table = conf->exclude_uri_table = conf->exclude_uri_body_table = conf->exclude_uri_post_table = conf->trace_uri_table = 0;
    conf->host_table = conf->content_table = 0;
-   conf->header_off_table = conf->output_header_table = conf->header_table = conf->header_value_table = conf->exclude_cookie_table = 0;
-   conf->envvar_table = conf->request_header_table = 0;
 
-   conf->appid_table = conf->was_table = 0;
+   conf->appid_table = 0;
    conf->body_limit = 5;
 
    // allocate value sets
+   conf->header_off_set = value_set_allocate();
+   conf->output_header_set = value_set_allocate();
+   conf->header_set = value_set_allocate();
+   conf->header_value_set = value_set_allocate();
+   conf->exclude_cookie_set = value_set_allocate();
+   conf->envvar_set = value_set_allocate();
+   conf->request_header_set = value_set_allocate();
+   conf->exclude_parameter_set = value_set_allocate();
    conf->exact_uri_set = value_set_allocate();
    conf->starts_with_uri_set = value_set_allocate();
+   conf->exclude_exact_uri_set = value_set_allocate();
+   conf->exclude_starts_with_uri_set = value_set_allocate();
+   conf->exact_host_set = value_set_allocate();
 
    apr_atomic_set32(&conf->requests, 0);
    apr_atomic_set32(&conf->responses, 0);
@@ -322,7 +334,7 @@ static const char *wt_tracking_disabling_header(cmd_parms *cmd, void *dummy, con
    else if (strlen(header) < 6 && strncasecmp(header, "WT-", 3)) return "ERROR: Web Tracking Apache Module: Invalid disabling header name";
    else if (strncasecmp(header, "X-WT-", 5) && strncasecmp(header, "WT-", 3)) return "ERROR: Web Tracking Apache Module: Invalid disabling header name";
 
-   conf->header_off_table = add_value(cmd->pool, conf->header_off_table, header);
+   value_set_add(conf->header_off_set, header);
 
    return OK;
 }
@@ -335,7 +347,7 @@ static const char *wt_tracking_output_header(cmd_parms *cmd, void *dummy, const 
    else if (strlen(header) < 6 && strncasecmp(header, "WT-", 3)) return "ERROR: Web Tracking Apache Module: Invalid output header name";
    else if (strncasecmp(header, "X-WT-", 5) && strncasecmp(header, "WT-", 3)) return "ERROR: Web Tracking Apache Module: Invalid output header name";
 
-   conf->output_header_table = add_value(cmd->pool, conf->output_header_table, header);
+   value_set_add(conf->output_header_set, header);
 
    return OK;
 }
@@ -344,7 +356,7 @@ static const char *wt_tracking_print_envvar(cmd_parms *cmd, void *dummy, const c
 {
    wt_config_t *conf = ap_get_module_config(cmd->server->module_config, &web_tracking_module);
 
-   conf->envvar_table = add_value(cmd->pool, conf->envvar_table, envvar);
+   value_set_add(conf->envvar_set, envvar);
 
    return OK;
 }
@@ -386,6 +398,33 @@ static const char *wt_tracking_starts_with_uri(cmd_parms *cmd, void *dummy, cons
    wt_config_t *conf = ap_get_module_config(cmd->server->module_config, &web_tracking_module);
 
    value_set_add(conf->starts_with_uri_set, uri);
+
+   return OK;
+}
+
+static const char *wt_tracking_exclude_exact_uri(cmd_parms *cmd, void *dummy, const char *uri)
+{
+   wt_config_t *conf = ap_get_module_config(cmd->server->module_config, &web_tracking_module);
+
+   value_set_add(conf->exclude_exact_uri_set, uri);
+
+   return OK;
+}
+
+static const char *wt_tracking_exclude_starts_with_uri(cmd_parms *cmd, void *dummy, const char *uri)
+{
+   wt_config_t *conf = ap_get_module_config(cmd->server->module_config, &web_tracking_module);
+
+   value_set_add(conf->exclude_starts_with_uri_set, uri);
+
+   return OK;
+}
+
+static const char *wt_tracking_exact_host(cmd_parms *cmd, void *dummy, const char *host)
+{
+   wt_config_t *conf = ap_get_module_config(cmd->server->module_config, &web_tracking_module);
+
+   value_set_add(conf->exact_host_set, host);
 
    return OK;
 }
@@ -509,7 +548,7 @@ static const char *wt_tracking_exclude_header(cmd_parms *cmd, void *dummy, const
 {
    wt_config_t *conf = ap_get_module_config(cmd->server->module_config, &web_tracking_module);
 
-   conf->header_table = add_value(cmd->pool, conf->header_table, header);
+   value_set_add(conf->header_set, header);
 
    return OK;
 }
@@ -518,7 +557,7 @@ static const char *wt_tracking_exclude_header_value(cmd_parms *cmd, void *dummy,
 {
    wt_config_t *conf = ap_get_module_config(cmd->server->module_config, &web_tracking_module);
 
-   conf->header_value_table = add_value(cmd->pool, conf->header_value_table, header);
+   value_set_add(conf->header_value_set, header);
 
    return OK;
 }
@@ -527,7 +566,7 @@ static const char *wt_tracking_exclude_cookie(cmd_parms *cmd, void *dummy, const
 {
    wt_config_t *conf = ap_get_module_config(cmd->server->module_config, &web_tracking_module);
 
-   conf->exclude_cookie_table = add_value(cmd->pool, conf->exclude_cookie_table, cookie);
+   value_set_add(conf->exclude_cookie_set, cookie);
 
    return OK;
 }
@@ -536,7 +575,7 @@ static const char *wt_tracking_exclude_form_parameter(cmd_parms *cmd, void *dumm
 {
    wt_config_t *conf = ap_get_module_config(cmd->server->module_config, &web_tracking_module);
 
-   conf->exclude_parameter_table = add_value(cmd->pool, conf->exclude_parameter_table, parameter);
+   value_set_add(conf->exclude_parameter_set, parameter);
 
    return OK;
 }
@@ -716,8 +755,19 @@ static apr_status_t child_exit(void *data)
    wt_config_t *conf = ap_get_module_config(s->module_config, &web_tracking_module);
 
    // delete value sets
+   value_set_delete(conf->header_off_set);
+   value_set_delete(conf->output_header_set);
+   value_set_delete(conf->envvar_set);
+   value_set_delete(conf->request_header_set);
+   value_set_delete(conf->header_set);
+   value_set_delete(conf->header_value_set);
+   value_set_delete(conf->exclude_cookie_set);
+   value_set_delete(conf->exclude_parameter_set);
    value_set_delete(conf->exact_uri_set);
    value_set_delete(conf->starts_with_uri_set);
+   value_set_delete(conf->exclude_exact_uri_set);
+   value_set_delete(conf->exclude_starts_with_uri_set);
+   value_set_delete(conf->exact_host_set);
 
    apr_status_t rtl = APR_ANYLOCK_LOCK(&conf->record_thread_mutex);
    if (rtl == APR_SUCCESS)
@@ -872,24 +922,27 @@ static int post_config(apr_pool_t *pconf, apr_pool_t *plog, apr_pool_t *ptemp, s
       if (conf->ssl_indicator && APLOG_IS_LEVEL(s, APLOG_INFO))
          ap_log_error(APLOG_MARK, APLOG_INFO, 0, s, "web_tracking_module: [%d] ssl_indicator = %s", pid, conf->ssl_indicator);
       
+      print_value_set(s, conf->exact_host_set, apr_psprintf(ptemp, "web_tracking_module: [%d] Host", pid));
       print_regex_table(s, conf->host_table, apr_psprintf(ptemp, "web_tracking_module: [%d] Host", pid));
       print_value_set(s, conf->exact_uri_set, apr_psprintf(ptemp, "web_tracking_module: [%d] Exact URI", pid));
       print_value_set(s, conf->starts_with_uri_set, apr_psprintf(ptemp, "web_tracking_module: [%d] Starts With URI", pid));
       print_regex_table(s, conf->uri_table, apr_psprintf(ptemp, "web_tracking_module: [%d] URI", pid));
+      print_value_set(s, conf->exclude_exact_uri_set, apr_psprintf(ptemp, "web_tracking_module: [%d] Exclude Exact URI", pid));
+      print_value_set(s, conf->exclude_starts_with_uri_set, apr_psprintf(ptemp, "web_tracking_module: [%d] Exclude Starts With URI", pid));
       print_regex_table(s, conf->exclude_uri_table, apr_psprintf(ptemp, "web_tracking_module: [%d] Exclude URI", pid));
       print_regex_table(s, conf->exclude_ip_table, apr_psprintf(ptemp, "web_tracking_module: [%d] Exclude IP", pid));
       print_regex_table(s, conf->exclude_uri_body_table, apr_psprintf(ptemp, "web_tracking_module: [%d] Exclude URI Body", pid));
       print_regex_table(s, conf->exclude_uri_post_table, apr_psprintf(ptemp, "web_tracking_module: [%d] Exclude URI Post", pid));
       print_regex_table(s, conf->trace_uri_table, apr_psprintf(ptemp, "web_tracking_module: [%d] Trace URI", pid));
       print_regex_table(s, conf->content_table, apr_psprintf(ptemp, "web_tracking_module: [%d] Content-Type", pid));
-      print_value_table(s, conf->header_off_table, apr_psprintf(ptemp, "web_tracking_module: [%d] disabling header", pid));
-      print_value_table(s, conf->output_header_table, apr_psprintf(ptemp, "web_tracking_module: [%d] output header", pid));
-      print_value_table(s, conf->header_table, apr_psprintf(ptemp, "web_tracking_module: [%d] exclude header", pid));
-      print_value_table(s, conf->header_value_table, apr_psprintf(ptemp, "web_tracking_module: [%d] exclude header-value", pid));
-      print_value_table(s, conf->exclude_cookie_table, apr_psprintf(ptemp, "web_tracking_module: [%d] exclude cookie", pid));
-      print_value_table(s, conf->exclude_parameter_table, apr_psprintf(ptemp, "web_tracking_module: [%d] exclude form parameter", pid));
-      print_value_table(s, conf->envvar_table, apr_psprintf(ptemp, "web_tracking_module: [%d] print environment variable", pid));
-      print_value_table(s, conf->request_header_table, apr_psprintf(ptemp, "web_tracking_module: [%d] print request header", pid));
+      print_value_set(s, conf->header_off_set, apr_psprintf(ptemp, "web_tracking_module: [%d] disabling header", pid));
+      print_value_set(s, conf->output_header_set, apr_psprintf(ptemp, "web_tracking_module: [%d] output header", pid));
+      print_value_set(s, conf->header_set, apr_psprintf(ptemp, "web_tracking_module: [%d] exclude header", pid));
+      print_value_set(s, conf->header_value_set, apr_psprintf(ptemp, "web_tracking_module: [%d] exclude header-value", pid));
+      print_value_set(s, conf->exclude_cookie_set, apr_psprintf(ptemp, "web_tracking_module: [%d] exclude cookie", pid));
+      print_value_set(s, conf->exclude_parameter_set, apr_psprintf(ptemp, "web_tracking_module: [%d] exclude form parameter", pid));
+      print_value_set(s, conf->envvar_set, apr_psprintf(ptemp, "web_tracking_module: [%d] print environment variable", pid));
+      print_value_set(s, conf->request_header_set, apr_psprintf(ptemp, "web_tracking_module: [%d] print request header", pid));
       if (APLOG_IS_LEVEL(s, APLOG_INFO) && conf->appid_header)
          ap_log_error(APLOG_MARK, APLOG_INFO, 0, s, "web_tracking_module: [%d] application id from response header = %s", pid, conf->appid_header);
       print_uri_table(s, conf->appid_table, apr_psprintf(ptemp, "web_tracking_module: [%d] application id", pid));      
@@ -905,12 +958,12 @@ static int post_config(apr_pool_t *pconf, apr_pool_t *plog, apr_pool_t *ptemp, s
 
    if (!conf->trace_uri_table)
    {
-      if (!conf->host_table)
+      if (!value_set_size(conf->exact_host_set) && !conf->host_table)
       {
          if (pconf && APLOG_IS_LEVEL(s, APLOG_WARNING))
-            ap_log_error(APLOG_MARK, APLOG_WARNING, 0, s, "WARNING: Web Tracking Apache Module: Not found any directive WebTrackingHost, so the tracking is disabled for all the requests");
+            ap_log_error(APLOG_MARK, APLOG_WARNING, 0, s, "WARNING: Web Tracking Apache Module: Not found neither any directive WebTrackingExactHost nor any directive WebTrackingHost, so the tracking is disabled for all the requests");
 
-         printf("WARNING: Web Tracking Apache Module: Not found any directive WebTrackingHost, so the tracking is disabled for all the requests\n");
+         printf("WARNING: Web Tracking Apache Module: Not found neither any directive WebTrackingExactHost nor any directive WebTrackingHost, so the tracking is disabled for all the requests\n");
       }
 
       if (!value_set_size(conf->exact_uri_set) && !value_set_size(conf->starts_with_uri_set) && !conf->uri_table)
@@ -1168,6 +1221,8 @@ static const command_rec config_cmds[] =
    AP_INIT_ITERATE("WebTrackingExactURI", wt_tracking_exact_uri, NULL, RSRC_CONF, "WebTrackingExactURI {<string}+"),
    AP_INIT_ITERATE("WebTrackingStartsWithURI", wt_tracking_starts_with_uri, NULL, RSRC_CONF, "WebTrackingStartsWithURI {<string}+"),
    AP_INIT_ITERATE("WebTrackingExcludeURI", wt_tracking_exclude_uri, NULL, RSRC_CONF, "WebTrackingExcludeURI {<PCRE>}+"),
+   AP_INIT_ITERATE("WebTrackingExcludeExactURI", wt_tracking_exclude_exact_uri, NULL, RSRC_CONF, "WebTrackingExcludeExactURI {<string}+"),
+   AP_INIT_ITERATE("WebTrackingExcludeStartsWithURI", wt_tracking_exclude_starts_with_uri, NULL, RSRC_CONF, "WebTrackingExcludeStartsWithURI {<string}+"),
    AP_INIT_ITERATE("WebTrackingExcludeURIBody", wt_tracking_exclude_uri_body, NULL, RSRC_CONF, "WebTrackingExcludeURIBody {<PCRE>}+"),
    AP_INIT_ITERATE("WebTrackingExcludeURIPost", wt_tracking_exclude_uri_post, NULL, RSRC_CONF, "WebTrackingExcludeURIPost {<PCRE>}+"),
    AP_INIT_ITERATE("WebTrackingTraceURI", wt_tracking_trace_uri, NULL, RSRC_CONF, "WebTrackingTraceURI {<PCRE>}+"),
@@ -1176,6 +1231,7 @@ static const command_rec config_cmds[] =
    AP_INIT_ITERATE("WebTrackingExcludeHeaderValue", wt_tracking_exclude_header_value, NULL, RSRC_CONF, "WebTrackingExcludeHeaderValue {<string>}+"),
    AP_INIT_ITERATE("WebTrackingExcludeCookie", wt_tracking_exclude_cookie, NULL, RSRC_CONF, "WebTrackingExcludeCookie {<string>}+"),
    AP_INIT_ITERATE("WebTrackingExcludeFormParameter", wt_tracking_exclude_form_parameter, NULL, RSRC_CONF, "WebTrackingExcludeFormParameter {<string>}+"),
+   AP_INIT_ITERATE("WebTrackingExactHost", wt_tracking_exact_host, NULL, RSRC_CONF, "WebTrackingExactHost {<string}+"),
    AP_INIT_ITERATE("WebTrackingHost", wt_tracking_host, NULL, RSRC_CONF, "WebTrackingHost <PCRE>"),
    AP_INIT_ITERATE("WebTrackingContentType", wt_tracking_content_type, NULL, RSRC_CONF, "WebTrackingContentType <PCRE>"),
    AP_INIT_TAKE1("WebTrackingRecordFolder", wt_record_folder,  NULL,  RSRC_CONF, "WebTrackingRecordFolder <string>"),
@@ -1244,37 +1300,6 @@ const char *search_regex_table(const char *data, regex_table_t *table)
    }
 
    return NULL;
-}
-
-static value_table_t *add_value(apr_pool_t *pool, value_table_t *table, const char *value)
-{
-   value_table_t *ret = table;
-
-   if (table != 0)
-   {
-      while (table->next != 0) table = table->next;
-      table->next = apr_pcalloc(pool, sizeof(value_table_t));
-      table = table->next;
-   }
-   else
-   {
-      ret = table = apr_pcalloc(pool, sizeof(value_table_t));
-   }
-
-   table->value = value;
-   table->next = 0;
-
-   return ret;
-}
-
-static void print_value_table(server_rec *s, value_table_t *table, const char *prefix)
-{
-   while (table != 0)
-   {
-       
-      if (APLOG_IS_LEVEL(s, APLOG_INFO)) ap_log_error(APLOG_MARK, APLOG_INFO, 0, s, "%s value = %s", prefix, table->value);
-      table = table->next;
-   }
 }
 
 static uri_table_t *add_uri_entry(apr_pool_t *pool, uri_table_t *table, const char *host, const char *uri, const char *value)
