@@ -2,6 +2,7 @@
 
 /*
  * VERSION       DATE        DESCRIPTION
+ * 2025.4.10.1  2025-04-10   Add Hostname info to server-status handler
  * 2025.4.7.1   2025-04-07   Add directive WebTrackingExcludeExactURI
  *                           Add directive WebTrackingExcludeStartsWithURI
  *                           Add directive WebTrackingExactHost
@@ -169,7 +170,7 @@ APLOG_USE_MODULE(web_tracking);
 #endif
 
 // version
-const char *version = "Web Tracking Apache Module 2025.4.7.1 (C17/C++23)";
+const char *version = "Web Tracking Apache Module 2025.4.10.1 (C17/C++23)";
 
 wt_counter_t *wt_counter = 0;
 static apr_shm_t *shm_counter = 0;
@@ -1133,7 +1134,8 @@ static int wt_status_hook(request_rec *r, int flags)
       ap_rprintf(r, "      <div id=\"wt-inner\">\n");
       ap_rprintf(r, "         <h2>Web Tracking Apache Module</h2>\n");
       ap_rprintf(r, "         <dl>\n");
-      ap_rprintf(r, "            <dt>Version: <b>%s</b></dt>", version);
+      ap_rprintf(r, "            <dt>Version: <b>%s</b></dt>\n", version);
+      ap_rprintf(r, "            <dt>Hostname: <b>%s</b></dt>\n", conf->hostname);
       ap_rprintf(r, "         </dl>\n");
 
       char formatted[32];
@@ -1150,7 +1152,7 @@ static int wt_status_hook(request_rec *r, int flags)
       apr_uint32_t compressed = apr_atomic_read32(&conf->response_with_compressed_bodies);
       if (responses > 0) compressed = compressed * 100 / responses;
       else compressed = 0;
-      snprintf(formatted, 32, "%'u (%u%% compressed)\n", responses, compressed);
+      snprintf(formatted, 32, "%'u (%u%% compressed)", responses, compressed);
       ap_rprintf(r, "            <dt>Response Bodies: <b>%s</b></dt>\n", formatted);
       ap_rprintf(r, "         </dl>\n");
 
@@ -1168,13 +1170,13 @@ static int wt_status_hook(request_rec *r, int flags)
          apr_uint32_t compressed = apr_atomic_read32(&wt_counter->response_inflated_bodies);
          if (responses > 0) compressed = compressed * 100 / responses;
          else compressed = 0;
-         snprintf(formatted, 32, "%'u (%u%% compressed)\n", responses, compressed);
+         snprintf(formatted, 32, "%'u (%u%% compressed)", responses, compressed);
          ap_rprintf(r, "            <dt>Response Bodies: <b>%s</b></dt>\n", formatted);
          ap_rprintf(r, "         </dl>\n");
       }
 
       ap_rprintf(r, "      </div>\n");
-      ap_rprintf(r, "   </div>");
+      ap_rprintf(r, "   </div>\n");
 
       if (APLOG_IS_LEVEL(r->server, APLOG_DEBUG))
          ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "wt_status_hook(): [%ld] end (OK)", tid);
