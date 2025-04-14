@@ -859,6 +859,38 @@ try {
       return OK;
    }
 
+   // either get or build an uuid
+   if (APLOG_R_IS_LEVEL(r, request_log_level))
+      ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] get or build uuid", thread_id);
+   std::string uuid_temp;
+   if (const char *uuid = apr_table_get(r->headers_in, conf->uuid_header);
+       !uuid)
+   {
+      // Make new uuid
+      const auto count = std::chrono::high_resolution_clock::now().time_since_epoch().count();
+      std::string unique_value = std::format("{}.{}.{}.{}", conf->hostname, process_id, thread_id, count);
+      uuid_temp.assign(sha256.hash(unique_value)).append(1, '0');
+
+      if (APLOG_R_IS_LEVEL(r, request_log_level))
+      ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] uuid (new) = %s", thread_id, uuid_temp.c_str());
+   }
+   else
+   {
+      // uuid already exists (correlated request)
+      uuid_temp.assign(uuid);
+      auto &back = uuid_temp.back();
+      if (back == '9') back = 'A';
+      else if (back == 'Z') back = 'a';
+      else if (back == 'z') back = '1';
+      else back += 1;
+
+      if (APLOG_R_IS_LEVEL(r, request_log_level))
+      ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] uuid (from request) = %s", thread_id, uuid_temp.c_str());
+   }
+
+   // append uuid to the request headers
+   apr_table_set(r->headers_in, conf->uuid_header, uuid_temp.c_str());
+
    // is disabled?
    if (conf->disable)
    {
@@ -1132,36 +1164,9 @@ try {
    if (APLOG_R_IS_LEVEL(r, request_log_level))
       ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] print environment variables ...", thread_id);
    if (conf->envvar_set) apr_table_do(log_envvars_cpp, &record, r->subprocess_env, NULL);
-
-   // either get or build an uuid
-   if (APLOG_R_IS_LEVEL(r, request_log_level))
-      ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] get or build uuid", thread_id);
-   std::string uuid_temp;
-   if (const char *uuid = apr_table_get(r->headers_in, conf->uuid_header);
-       !uuid)
-   {
-      // Make new uuid
-      const auto count = std::chrono::high_resolution_clock::now().time_since_epoch().count();
-      std::string unique_value = std::format("{}.{}.{}.{}", conf->hostname, process_id, thread_id, count);
-      uuid_temp.assign(sha256.hash(unique_value)).append(1, '0');
-
-      if (APLOG_R_IS_LEVEL(r, request_log_level))
-      ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] uuid (new) = %s", thread_id, uuid_temp.c_str());
-   }
-   else
-   {
-      // uuid already exists (correlated request)
-      uuid_temp.assign(uuid);
-      uuid_temp.back() += 1;
-
-      if (APLOG_R_IS_LEVEL(r, request_log_level))
-      ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] uuid (from request) = %s", thread_id, uuid_temp.c_str());
-   }
-
-   // append uuid to the request headers
-   char *uuid_for_request = new char[uuid_temp.length() + 1];
-   std::strcpy(uuid_for_request, uuid_temp.c_str());
-   apr_table_setn(r->headers_in, conf->uuid_header, uuid_for_request);
+   
+   // inject header x-wt-request-to-be-tracked
+   apr_table_setn(r->headers_in, "x-wt-request-to-be-tracked", "true");
 
    // print out request data
    if (APLOG_R_IS_LEVEL(r, request_log_level))
@@ -1434,19 +1439,6 @@ try {
 
 catch (const std::exception &err)
 {
-   // retrieve configuration object
-   wt_config_t *conf = static_cast<wt_config_t *>(ap_get_module_config(r->server->module_config, &web_tracking_module));
-
-   if (conf)
-   {
-      if (const char *uuid_for_request = apr_table_get(r->headers_in, conf->uuid_header);
-          uuid_for_request)
-      {
-         apr_table_unset(r->headers_in, conf->uuid_header);
-         delete[] uuid_for_request;
-      }
-   }
-
    if (const char *data = apr_table_get(r->notes, "request_data");
        data)
    {
@@ -1739,10 +1731,6 @@ try {
          if (APLOG_IS_LEVEL(r->server, APLOG_ALERT))
             ap_log_error(APLOG_MARK, APLOG_ALERT, rtl, r->server, "ALERT: Record with uuid = %s failed to acquire a cross-thread lock", uuid);
       }
-
-      // uuid
-      apr_table_unset(r->headers_in, conf->uuid_header);
-      delete[] uuid;
    }
    else
    {
@@ -1762,10 +1750,6 @@ try {
          apr_table_unset(r->notes, "response_body_data");
          delete[] response_body_data;
       }
-
-      // uuid
-      apr_table_unset(r->headers_in, conf->uuid_header);
-      delete[] uuid;
    }
 
    // Exit
@@ -1780,19 +1764,6 @@ try {
 
 catch (const std::exception &err)
 {
-   // retrieve configuration object
-   wt_config_t *conf = static_cast<wt_config_t *>(ap_get_module_config(r->server->module_config, &web_tracking_module));
-
-   if (conf)
-   {
-      if (const char *uuid_for_request = apr_table_get(r->headers_in, conf->uuid_header);
-          uuid_for_request)
-      {
-         apr_table_unset(r->headers_in, conf->uuid_header);
-         delete[] uuid_for_request;
-      }
-   }
-
    if (const char *data = apr_table_get(r->notes, "request_data");
        data)
    {
@@ -2382,13 +2353,6 @@ catch (const std::exception &err)
 
    if (ctx)
    {
-      if (const char *uuid_for_request = apr_table_get(f->r->headers_in, ctx->conf->uuid_header);
-          uuid_for_request)
-      {
-         apr_table_unset(f->r->headers_in, ctx->conf->uuid_header);
-         delete[] uuid_for_request;
-      }
-
       f->ctx = nullptr;
       delete ctx;      
    }
@@ -3033,13 +2997,6 @@ catch (const std::exception &err)
 
    if (ctx)
    {
-      if (const char *uuid_for_request = apr_table_get(f->r->headers_in, ctx->conf->uuid_header);
-          uuid_for_request)
-      {
-         apr_table_unset(f->r->headers_in, ctx->conf->uuid_header);
-         delete[] uuid_for_request;
-      }
-
       // Delete active filter context object
       f->ctx = nullptr;
       delete ctx;      
