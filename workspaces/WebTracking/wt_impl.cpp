@@ -797,6 +797,9 @@ thread_local int request_log_level {};
 thread_local apr_time_t module_overhead_for_current_request {};
 thread_local SHA256 sha256 {};
 
+// sentinel header
+constexpr const char *sentinel_header = "x-wt-request-to-be-tracked";
+
 extern "C" int post_read_request_impl(request_rec *r)
 try {
    // thread local variable
@@ -1165,8 +1168,8 @@ try {
       ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] print environment variables ...", thread_id);
    if (conf->envvar_set) apr_table_do(log_envvars_cpp, &record, r->subprocess_env, NULL);
    
-   // inject header x-wt-request-to-be-tracked
-   apr_table_setn(r->headers_in, "x-wt-request-to-be-tracked", "true");
+   // inject header sentinel header
+   apr_table_setn(r->headers_in, sentinel_header, "true");
 
    // print out request data
    if (APLOG_R_IS_LEVEL(r, request_log_level))
@@ -1507,6 +1510,22 @@ try {
       return OK;
    }
 
+   // get sentinel header
+   if (APLOG_R_IS_LEVEL(r, request_log_level))
+      ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "log_transaction(): [%ld] retrieve sentinel header", thread_id);
+
+   if (!apr_table_get(r->headers_in, sentinel_header))
+   {
+      if (APLOG_R_IS_LEVEL(r, request_log_level))
+      {
+         std::string elapsed { to_string(apr_time_now() - start) };
+         ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "log_transaction(): [%ld] sentinel header is missing, so the web tracking is disabled for this request", thread_id);
+         ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "log_transaction(): [%ld] end (OK) - %s", thread_id, elapsed.c_str());
+      }
+
+      return OK;
+   }
+
    // get uuid
    if (APLOG_R_IS_LEVEL(r, request_log_level))
       ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "log_transaction(): [%ld] retrieve uuid", thread_id);
@@ -1517,7 +1536,7 @@ try {
       if (APLOG_R_IS_LEVEL(r, request_log_level))
       {
          std::string elapsed { to_string(apr_time_now() - start) };
-         ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "log_transaction(): [%ld] uuid is NULL, so the web tracking is disabled for this request", thread_id);
+         ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "log_transaction(): [%ld] uuid is missing, so something wrong happened for this request", thread_id);
          ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "log_transaction(): [%ld] end (OK) - %s", thread_id, elapsed.c_str());
       }
 

@@ -2,6 +2,7 @@
 
 /*
  * VERSION       DATE        DESCRIPTION
+ * 2025.4.15.1  2025-04-15   Fix some regressions on directive "WebTrackingUuidHeader"
  * 2025.4.14.1  2025-04-14   Create header "WebTrackingUuidHeader" on every request
  *                           Create header x-wt-request-to-be-tracked = true 
  *                           when the tracking is active for the current request
@@ -174,7 +175,7 @@ APLOG_USE_MODULE(web_tracking);
 #endif
 
 // version
-const char *version = "Web Tracking Apache Module 2025.4.14.1 (C17/C++23)";
+const char *version = "Web Tracking Apache Module 2025.4.15.1 (C17/C++23)";
 
 wt_counter_t *wt_counter = 0;
 static apr_shm_t *shm_counter = 0;
