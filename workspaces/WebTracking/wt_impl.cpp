@@ -894,6 +894,10 @@ try {
    // append uuid to the request headers
    apr_table_set(r->headers_in, conf->uuid_header, uuid_temp.c_str());
 
+   // increment counter
+   apr_atomic_inc32(&conf->total_requests);
+   if (wt_counter) apr_atomic_inc32(&wt_counter->total_requests);   
+
    // is disabled?
    if (conf->disable)
    {

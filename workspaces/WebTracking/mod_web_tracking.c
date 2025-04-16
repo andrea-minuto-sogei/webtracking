@@ -2,6 +2,7 @@
 
 /*
  * VERSION       DATE        DESCRIPTION
+ * 2025.4.16.1  2025-04-16   Add a new metric: total requests
  * 2025.4.15.1  2025-04-15   Fix some regressions on directive "WebTrackingUuidHeader"
  * 2025.4.14.1  2025-04-14   Create header "WebTrackingUuidHeader" on every request
  *                           Create header x-wt-request-to-be-tracked = true 
@@ -175,7 +176,7 @@ APLOG_USE_MODULE(web_tracking);
 #endif
 
 // version
-const char *version = "Web Tracking Apache Module 2025.4.15.1 (C17/C++23)";
+const char *version = "Web Tracking Apache Module 2025.4.16.1 (C17/C++23)";
 
 wt_counter_t *wt_counter = 0;
 static apr_shm_t *shm_counter = 0;
@@ -225,6 +226,7 @@ static void *create_server_config(apr_pool_t *p, server_rec *s)
    apr_atomic_set32(&conf->request_bodies, 0);
    apr_atomic_set32(&conf->response_bodies, 0);
    apr_atomic_set32(&conf->response_with_compressed_bodies, 0);
+   apr_atomic_set32(&conf->total_requests, 0);
 
    return conf;
 }
@@ -885,6 +887,7 @@ static int post_config(apr_pool_t *pconf, apr_pool_t *plog, apr_pool_t *ptemp, s
          apr_atomic_set32(&wt_counter->request_bodies, 0);
          apr_atomic_set32(&wt_counter->response_bodies, 0);
          apr_atomic_set32(&wt_counter->response_inflated_bodies, 0);
+         apr_atomic_set32(&wt_counter->total_requests, 0);
          wt_counter->pid = pid;
 
          apr_pool_cleanup_register(pconf, NULL, wt_shm_cleanup, apr_pool_cleanup_null);
@@ -1147,10 +1150,12 @@ static int wt_status_hook(request_rec *r, int flags)
 
       ap_rprintf(r, "         <dl>\n");
       ap_rprintf(r, "            <dt><b>Statistics by pid (%d):</b></dt>\n", pid);
+      snprintf(formatted, 32, "%'u", apr_atomic_read32(&conf->total_requests));
+      ap_rprintf(r, "            <dt>Total Requests: <b>%s</b></dt>\n", formatted);
       snprintf(formatted, 32, "%'u", apr_atomic_read32(&conf->requests));
-      ap_rprintf(r, "            <dt>Requests: <b>%s</b></dt>\n", formatted);
+      ap_rprintf(r, "            <dt>Tracked Requests: <b>%s</b></dt>\n", formatted);
       snprintf(formatted, 32, "%'u", apr_atomic_read32(&conf->responses));
-      ap_rprintf(r, "            <dt>Responses: <b>%s</b></dt>\n", formatted);
+      ap_rprintf(r, "            <dt>Tracked Responses: <b>%s</b></dt>\n", formatted);
       snprintf(formatted, 32, "%'u", apr_atomic_read32(&conf->request_bodies));
       ap_rprintf(r, "            <dt>Request Bodies: <b>%s</b></dt>\n", formatted);
       apr_uint32_t responses = apr_atomic_read32(&conf->response_bodies);
@@ -1165,10 +1170,12 @@ static int wt_status_hook(request_rec *r, int flags)
       {
          ap_rprintf(r, "         <dl>\n");
          ap_rprintf(r, "            <dt><b>Statistics by instance (%d):</b></dt>\n", wt_counter->pid);
+         snprintf(formatted, 32, "%'u", apr_atomic_read32(&wt_counter->total_requests));
+         ap_rprintf(r, "            <dt>Total Requests: <b>%s</b></dt>\n", formatted);
          snprintf(formatted, 32, "%'u", apr_atomic_read32(&wt_counter->requests));
-         ap_rprintf(r, "            <dt>Requests: <b>%s</b></dt>\n", formatted);
+         ap_rprintf(r, "            <dt>Tracked Requests: <b>%s</b></dt>\n", formatted);
          snprintf(formatted, 32, "%'u", apr_atomic_read32(&wt_counter->responses));
-         ap_rprintf(r, "            <dt>Responses: <b>%s</b></dt>\n", formatted);
+         ap_rprintf(r, "            <dt>Tracked Responses: <b>%s</b></dt>\n", formatted);
          snprintf(formatted, 32, "%'u", apr_atomic_read32(&wt_counter->request_bodies));
          ap_rprintf(r, "            <dt>Request Bodies: <b>%s</b></dt>\n", formatted);
          apr_uint32_t responses = apr_atomic_read32(&wt_counter->response_bodies);

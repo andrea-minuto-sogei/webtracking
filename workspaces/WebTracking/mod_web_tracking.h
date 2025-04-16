@@ -98,6 +98,7 @@ struct wt_config_s
   apr_uint32_t request_bodies;
   apr_uint32_t response_bodies;
   apr_uint32_t response_with_compressed_bodies;
+  apr_uint32_t total_requests;
 };
 
 typedef struct wt_config_s wt_config_t;
@@ -109,6 +110,7 @@ struct wt_counter_s
   apr_uint32_t request_bodies;
   apr_uint32_t response_bodies;
   apr_uint32_t response_inflated_bodies;
+  apr_uint32_t total_requests;
   pid_t pid;
 };
 
