@@ -2,6 +2,7 @@
 
 /*
  * VERSION       DATE        DESCRIPTION
+ * 2025.4.30.1  2025-04-30   Add current record log file name to server-status handler
  * 2025.4.16.1  2025-04-16   Add a new metric: total requests
  * 2025.4.15.1  2025-04-15   Fix some regressions on directive "WebTrackingUuidHeader"
  * 2025.4.14.1  2025-04-14   Create header "WebTrackingUuidHeader" on every request
@@ -176,7 +177,7 @@ APLOG_USE_MODULE(web_tracking);
 #endif
 
 // version
-const char *version = "Web Tracking Apache Module 2025.4.16.1 (C17/C++23)";
+const char *version = "Web Tracking Apache Module 2025.4.30.1 (C17/C++23)";
 
 wt_counter_t *wt_counter = 0;
 static apr_shm_t *shm_counter = 0;
@@ -1150,6 +1151,7 @@ static int wt_status_hook(request_rec *r, int flags)
 
       ap_rprintf(r, "         <dl>\n");
       ap_rprintf(r, "            <dt><b>Statistics by pid (%d):</b></dt>\n", pid);
+      ap_rprintf(r, "            <dt>Current file: <b>%s</b></dt>\n", wt_record_current_name());
       snprintf(formatted, 32, "%'u", apr_atomic_read32(&conf->total_requests));
       ap_rprintf(r, "            <dt>Total Requests: <b>%s</b></dt>\n", formatted);
       snprintf(formatted, 32, "%'u", apr_atomic_read32(&conf->requests));

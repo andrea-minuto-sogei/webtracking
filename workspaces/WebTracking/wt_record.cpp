@@ -150,6 +150,12 @@ class wt_record
    public:
       // default constructor
       wt_record() = default;
+
+      // getter - name
+      const char *getName() const
+      {
+         return name.c_str();
+      }
       
       // initialize static variables
       void init(pid_t pid, const char *folder, const char *archive_folder, unsigned int minutes)
@@ -271,6 +277,17 @@ namespace
    wt_record record;
 }
 
+bool wt_record_write(const std::string &text)
+{
+   return record.write_data(text);
+}
+
+extern "C"
+const char *wt_record_current_name()
+{
+   return record.getName();
+}
+
 extern "C"
 unsigned short wt_record_init(pid_t pid, const char *folder, const char *archive_folder, unsigned int minutes)
 {
@@ -320,11 +337,6 @@ unsigned short wt_record_check_filesystem(const char *folder, const char *archiv
    }
 
    return 0; /* KO */
-}
-
-bool wt_record_write(const std::string &text)
-{
-   return record.write_data(text);
 }
 
 extern "C"
