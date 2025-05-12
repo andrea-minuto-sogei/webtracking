@@ -33,7 +33,7 @@ std::string trim(std::string &&str)
    auto end = str.end();
    do { --end; } while (std::distance(start, end) > 0 && std::isspace(*end));
 
-   return std::string(start, end + 1);
+   return std::string { start, end + 1 };
 }
 
 void manage_debug_file()

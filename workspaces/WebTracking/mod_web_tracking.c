@@ -2,6 +2,12 @@
 
 /*
  * VERSION       DATE        DESCRIPTION
+ * 2025.5.12.1  2025-05-12   Add directive WebTrackingRequestBodyType
+ *                           Add directive WebTrackingResponseBodyType
+ *                           Add directive WebTrackingExcludeURIRequestBody
+ *                           Add directive WebTrackingExcludeURIResponseBody
+ *                           Remove directive WebTrackingEnablePostBody
+ *                           Remove directive WebTrackingExcludeURIPost
  * 2025.4.30.1  2025-04-30   Add current record log file name to server-status handler
  * 2025.4.16.1  2025-04-16   Add a new metric: total requests
  * 2025.4.15.1  2025-04-15   Fix some regressions on directive "WebTrackingUuidHeader"
@@ -177,7 +183,7 @@ APLOG_USE_MODULE(web_tracking);
 #endif
 
 // version
-const char *version = "Web Tracking Apache Module 2025.4.30.1 (C17/C++23)";
+const char *version = "Web Tracking Apache Module 2025.5.12.1 (C17/C++23)";
 
 wt_counter_t *wt_counter = 0;
 static apr_shm_t *shm_counter = 0;
@@ -192,7 +198,7 @@ static void *create_server_config(apr_pool_t *p, server_rec *s)
    gethostname(hostname, 256);
    conf->hostname = apr_pstrdup(p, hostname);
 
-   conf->disable = conf->inflate_response = conf->proxy = conf->enable_post_body = 0;
+   conf->disable = conf->inflate_response = conf->proxy = 0;
    conf->http = conf->https = 1;
    conf->uuid_header = conf->ssl_indicator = conf->clientip_header = conf->appid_header = NULL;
 
@@ -201,11 +207,15 @@ static void *create_server_config(apr_pool_t *p, server_rec *s)
    conf->record_minutes = 0;
    conf->log_enabled = 0;
 
-   conf->uri_table = conf->exclude_ip_table = conf->exclude_uri_table = conf->exclude_uri_body_table = conf->exclude_uri_post_table = conf->trace_uri_table = 0;
+   conf->uri_table = conf->exclude_ip_table = conf->exclude_uri_table = conf->trace_uri_table = 0;
+   conf->exclude_uri_body_table = conf->exclude_uri_request_body_table = conf->exclude_uri_response_body_table = 0;
    conf->host_table = conf->content_table = 0;
 
    conf->appid_table = 0;
    conf->body_limit = 5;
+
+   // body type
+   conf->request_body_type = conf->response_body_type = e_content;
 
    // allocate value sets
    conf->header_off_set = value_set_allocate();
@@ -328,10 +338,23 @@ static const char *wt_tracking_enable_proxy(cmd_parms *cmd, void *dummy, int pro
    return OK;
 }
 
-static const char *wt_tracking_enable_post_body(cmd_parms *cmd, void *dummy, int post_body)
+static const char *wt_tracking_request_body_type(cmd_parms *cmd, void *dummy, const char *value)
 {
    wt_config_t *conf = ap_get_module_config(cmd->server->module_config, &web_tracking_module);
-   conf->enable_post_body = post_body;
+   if (!strcasecmp(value, "always")) conf->request_body_type = e_always;
+   else if (!strcasecmp(value, "content")) conf->request_body_type = e_content;
+   else if (!strcasecmp(value, "never")) conf->request_body_type = e_never;
+   else return "ERROR: Web Tracking Apache Module: Invalid request body types";
+   return OK;
+}
+
+static const char *wt_tracking_response_body_type(cmd_parms *cmd, void *dummy, const char *value)
+{
+   wt_config_t *conf = ap_get_module_config(cmd->server->module_config, &web_tracking_module);
+   if (!strcasecmp(value, "always")) conf->response_body_type = e_always;
+   else if (!strcasecmp(value, "content")) conf->response_body_type = e_content;
+   else if (!strcasecmp(value, "never")) conf->response_body_type = e_never;
+   else return "ERROR: Web Tracking Apache Module: Invalid response body types";
    return OK;
 }
 
@@ -484,7 +507,7 @@ static const char *wt_tracking_exclude_uri_body(cmd_parms *cmd, void *dummy, con
    return OK;
 }
 
-static const char *wt_tracking_exclude_uri_post(cmd_parms *cmd, void *dummy, const char *uri_pcre)
+static const char *wt_tracking_exclude_uri_request_body(cmd_parms *cmd, void *dummy, const char *uri_pcre)
 {
    wt_config_t *conf = ap_get_module_config(cmd->server->module_config, &web_tracking_module);
 
@@ -493,7 +516,7 @@ static const char *wt_tracking_exclude_uri_post(cmd_parms *cmd, void *dummy, con
    if (ret != 0)
    {
       char buffer[512 + 1];
-      strcpy(buffer, "ERROR: Web Tracking Apache Module: Invalid Exclude URI POST PCRE \"");
+      strcpy(buffer, "ERROR: Web Tracking Apache Module: Invalid Exclude URI Request Body PCRE \"");
       strcat(buffer, uri_pcre);
       strcat(buffer, "\" (Reason: ");
       ap_regerror(ret, regex, buffer + strlen(buffer), 512 - strlen(buffer));
@@ -502,7 +525,30 @@ static const char *wt_tracking_exclude_uri_post(cmd_parms *cmd, void *dummy, con
       return strdup(buffer);
    }
 
-   conf->exclude_uri_post_table = add_regex(cmd->pool, conf->exclude_uri_post_table, regex, uri_pcre);
+   conf->exclude_uri_request_body_table = add_regex(cmd->pool, conf->exclude_uri_request_body_table, regex, uri_pcre);
+
+   return OK;
+}
+
+static const char *wt_tracking_exclude_uri_response_body(cmd_parms *cmd, void *dummy, const char *uri_pcre)
+{
+   wt_config_t *conf = ap_get_module_config(cmd->server->module_config, &web_tracking_module);
+
+   ap_regex_t *regex = apr_pcalloc(cmd->pool, sizeof(ap_regex_t));
+   int ret = ap_regcomp(regex, uri_pcre, AP_REG_EXTENDED);
+   if (ret != 0)
+   {
+      char buffer[512 + 1];
+      strcpy(buffer, "ERROR: Web Tracking Apache Module: Invalid Exclude URI Response Body PCRE \"");
+      strcat(buffer, uri_pcre);
+      strcat(buffer, "\" (Reason: ");
+      ap_regerror(ret, regex, buffer + strlen(buffer), 512 - strlen(buffer));
+      ap_regfree(regex);
+      strcat(buffer, ")");
+      return strdup(buffer);
+   }
+
+   conf->exclude_uri_response_body_table = add_regex(cmd->pool, conf->exclude_uri_response_body_table, regex, uri_pcre);
 
    return OK;
 }
@@ -852,6 +898,14 @@ static void child_init(apr_pool_t *pchild, server_rec *s)
    if (APLOG_IS_LEVEL(s, APLOG_DEBUG)) ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, s, "child_init(): [%d] child initialized", pid);
 }
 
+static const char *body_type_to_string(enum e_body_type value)
+{
+   if (value == e_always) return "always";
+   else if (value == e_content) return "content";
+   else if (value == e_never) return "never";
+   else return "uknown body type";
+}
+
 static int post_config(apr_pool_t *pconf, apr_pool_t *plog, apr_pool_t *ptemp, server_rec *s)
 {
    pid_t pid = getpid();
@@ -917,7 +971,8 @@ static int post_config(apr_pool_t *pconf, apr_pool_t *plog, apr_pool_t *ptemp, s
          ap_log_error(APLOG_MARK, APLOG_INFO, 0, s, "web_tracking_module: [%d] inflate_response = %s", pid, (conf->inflate_response == 1 ? "On" : "Off"));
          ap_log_error(APLOG_MARK, APLOG_INFO, 0, s, "web_tracking_module: [%d] enable_proxy = %s", pid, (conf->proxy == 1 ? "On" : "Off"));
          ap_log_error(APLOG_MARK, APLOG_INFO, 0, s, "web_tracking_module: [%d] body_limit = %d MB", pid, conf->body_limit);
-         ap_log_error(APLOG_MARK, APLOG_INFO, 0, s, "web_tracking_module: [%d] enable_post_body = %s", pid, (conf->enable_post_body == 1 ? "On" : "Off"));
+         ap_log_error(APLOG_MARK, APLOG_INFO, 0, s, "web_tracking_module: [%d] request body type = %s", pid, body_type_to_string(conf->request_body_type));
+         ap_log_error(APLOG_MARK, APLOG_INFO, 0, s, "web_tracking_module: [%d] request body type = %s", pid, body_type_to_string(conf->response_body_type));
       }
 
       if (conf->record_folder != NULL && APLOG_IS_LEVEL(s, APLOG_INFO))
@@ -942,7 +997,8 @@ static int post_config(apr_pool_t *pconf, apr_pool_t *plog, apr_pool_t *ptemp, s
       print_regex_table(s, conf->exclude_uri_table, apr_psprintf(ptemp, "web_tracking_module: [%d] Exclude URI", pid));
       print_regex_table(s, conf->exclude_ip_table, apr_psprintf(ptemp, "web_tracking_module: [%d] Exclude IP", pid));
       print_regex_table(s, conf->exclude_uri_body_table, apr_psprintf(ptemp, "web_tracking_module: [%d] Exclude URI Body", pid));
-      print_regex_table(s, conf->exclude_uri_post_table, apr_psprintf(ptemp, "web_tracking_module: [%d] Exclude URI Post", pid));
+      print_regex_table(s, conf->exclude_uri_request_body_table, apr_psprintf(ptemp, "web_tracking_module: [%d] Exclude URI Request Body", pid));
+      print_regex_table(s, conf->exclude_uri_response_body_table, apr_psprintf(ptemp, "web_tracking_module: [%d] Exclude URI Response Body", pid));
       print_regex_table(s, conf->trace_uri_table, apr_psprintf(ptemp, "web_tracking_module: [%d] Trace URI", pid));
       print_regex_table(s, conf->content_table, apr_psprintf(ptemp, "web_tracking_module: [%d] Content-Type", pid));
       print_value_set(s, conf->header_off_set, apr_psprintf(ptemp, "web_tracking_module: [%d] disabling header", pid));
@@ -1229,7 +1285,8 @@ static const command_rec config_cmds[] =
    AP_INIT_FLAG("WebTrackingHttpsEnabled", wt_tracking_https_enabled, NULL, RSRC_CONF, "WebTrackingHttpsEnabled On | Off"),
    AP_INIT_FLAG("WebTrackingInflateResponse", wt_tracking_inflate_response, NULL, RSRC_CONF, "WebTrackingInflateResponse On | Off"),
    AP_INIT_FLAG("WebTrackingEnableProxy", wt_tracking_enable_proxy, NULL, RSRC_CONF, "WebTrackingEnableProxy On | Off"),
-   AP_INIT_FLAG("WebTrackingEnablePostBody", wt_tracking_enable_post_body, NULL, RSRC_CONF, "WebTrackingEnablePostBody On | Off"),
+   AP_INIT_TAKE1("WebTrackingRequestBodyType", wt_tracking_request_body_type, NULL, RSRC_CONF, "WebTrackingRequestBodyType always|content|never"),
+   AP_INIT_TAKE1("WebTrackingResponseBodyType", wt_tracking_response_body_type, NULL, RSRC_CONF, "WebTrackingResponseBodyType always|content|never"),
    AP_INIT_ITERATE("WebTrackingDisablingHeader", wt_tracking_disabling_header, NULL, RSRC_CONF, "WebTrackingDisablingHeader {<string>}+"),
    AP_INIT_ITERATE("WebTrackingOutputHeader", wt_tracking_output_header, NULL, RSRC_CONF, "WebTrackingOutputHeader {<string>}+"),
    AP_INIT_ITERATE("WebTrackingPrintEnvVar", wt_tracking_print_envvar, NULL, RSRC_CONF, "WebTrackingPrintEnvVar {<string>}+"),
@@ -1240,7 +1297,8 @@ static const command_rec config_cmds[] =
    AP_INIT_ITERATE("WebTrackingExcludeExactURI", wt_tracking_exclude_exact_uri, NULL, RSRC_CONF, "WebTrackingExcludeExactURI {<string}+"),
    AP_INIT_ITERATE("WebTrackingExcludeStartsWithURI", wt_tracking_exclude_starts_with_uri, NULL, RSRC_CONF, "WebTrackingExcludeStartsWithURI {<string}+"),
    AP_INIT_ITERATE("WebTrackingExcludeURIBody", wt_tracking_exclude_uri_body, NULL, RSRC_CONF, "WebTrackingExcludeURIBody {<PCRE>}+"),
-   AP_INIT_ITERATE("WebTrackingExcludeURIPost", wt_tracking_exclude_uri_post, NULL, RSRC_CONF, "WebTrackingExcludeURIPost {<PCRE>}+"),
+   AP_INIT_ITERATE("WebTrackingExcludeURIRequestBody", wt_tracking_exclude_uri_request_body, NULL, RSRC_CONF, "WebTrackingExcludeURIRequestBody {<PCRE>}+"),
+   AP_INIT_ITERATE("WebTrackingExcludeURIResponseBody", wt_tracking_exclude_uri_response_body, NULL, RSRC_CONF, "WebTrackingExcludeURIResponseBody {<PCRE>}+"),
    AP_INIT_ITERATE("WebTrackingTraceURI", wt_tracking_trace_uri, NULL, RSRC_CONF, "WebTrackingTraceURI {<PCRE>}+"),
    AP_INIT_ITERATE("WebTrackingExcludeIP", wt_tracking_exclude_ip, NULL, RSRC_CONF, "WebTrackingExcludeIP {<PCRE>}+"),
    AP_INIT_ITERATE("WebTrackingExcludeHeader", wt_tracking_exclude_header, NULL, RSRC_CONF, "WebTrackingExcludeHeader {<string>}+"),

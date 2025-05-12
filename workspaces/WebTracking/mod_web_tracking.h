@@ -45,6 +45,8 @@ struct value_table_s
 
 typedef struct value_table_s value_table_t;
 
+enum e_body_type { e_always = 1, e_never = -1, e_content = 0 };
+
 struct wt_config_s 
 {
   unsigned short disable;
@@ -53,7 +55,6 @@ struct wt_config_s
   unsigned short inflate_response;
   unsigned short proxy;
   unsigned short body_limit;
-  unsigned short enable_post_body;
 
   const char *hostname;
   const char *uuid_header;
@@ -63,11 +64,15 @@ struct wt_config_s
 
   uri_table_t *appid_table;
 
+  enum e_body_type request_body_type;
+  enum e_body_type response_body_type;
+
   regex_table_t *uri_table;
   regex_table_t *exclude_ip_table;
   regex_table_t *exclude_uri_table;
   regex_table_t *exclude_uri_body_table;
-  regex_table_t *exclude_uri_post_table;
+  regex_table_t *exclude_uri_request_body_table;
+  regex_table_t *exclude_uri_response_body_table;
   regex_table_t *trace_uri_table;
   regex_table_t *host_table;
   regex_table_t *content_table;

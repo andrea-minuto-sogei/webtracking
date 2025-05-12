@@ -564,7 +564,6 @@ struct wt_input_filter_cpp
    std::string uri;
    bool trace_uri;
    apr_size_t content_length_i;
-   std::string content_type;
    bool query_string;
    wt_config_t *conf;
    apr_time_t start_i;
@@ -799,6 +798,12 @@ thread_local SHA256 sha256 {};
 
 // sentinel header
 constexpr const char *sentinel_header = "x-wt-request-to-be-tracked";
+
+// it is a method that supports a body
+bool is_body_supported(std::string_view method)
+{
+   return (method == "DELETE" || method == "PATCH" || method == "POST" || method == "PUT");
+}
 
 extern "C" int post_read_request_impl(request_rec *r)
 try {
@@ -1199,15 +1204,15 @@ try {
       ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] **** FINISH END OF REQUEST ****", thread_id);
    }
 
-   // assess whether there is the need to enable a filter and prepare either one or both or none
-   bool input_filter = trace_uri || (std::strcmp(r->method, "GET") != 0 && std::strcmp(r->method, "DELETE") != 0);
-   bool output_filter = true;
+   // assess whether there is the need to enable any filter and prepare either one or both
+   bool input_filter = is_body_supported(r->method) && (trace_uri || conf->request_body_type != e_never); 
+   bool output_filter = trace_uri || conf->response_body_type != e_never;
    bool output_header = trace_uri || !!conf->output_header_set;
 
    // print filter values out before checks
    if (APLOG_R_IS_LEVEL(r, request_log_level))
    {
-      ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] before checks", thread_id);
+      ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] before exclude body uri and content length checks", thread_id);
       ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] input_filter = %s", thread_id, to_char(input_filter));
       ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] output_filter = %s", thread_id, to_char(output_filter));
       ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] output_header = %s", thread_id, to_char(output_header));
@@ -1223,8 +1228,7 @@ try {
    if (!trace_uri)
    {
       // check whether we got an uri with excluded body
-      if (const char *exclude_uri_body_matched = search_regex_table(r->uri, conf->exclude_uri_body_table);
-         exclude_uri_body_matched)
+      if (const char *exclude_uri_body_matched = search_regex_table(r->uri, conf->exclude_uri_body_table))
       {
          input_filter = output_filter = false;
 
@@ -1232,33 +1236,43 @@ try {
             ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] matched exclude uri body = %s", thread_id, exclude_uri_body_matched);
       }
 
-      // check whether we got a POST uri with excluded body
-      if (input_filter && std::strcmp(r->method, "POST") == 0)
-      {
-         if (const char *exclude_uri_post_matched = search_regex_table(r->uri, conf->exclude_uri_post_table);
-            exclude_uri_post_matched)
-         {
-            input_filter = false;
-
-            if (APLOG_R_IS_LEVEL(r, request_log_level))
-               ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] matched exclude uri post = %s", thread_id, exclude_uri_post_matched);
-         }
-      }
-
       // is input filter enabled?
       if (input_filter)
       {
-         unsigned long clinmb = cl / 1'048'576L;
-         if (APLOG_R_IS_LEVEL(r, request_log_level))
-            ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] content length in MB = %lu", thread_id, clinmb);
-
-         // check whether the body length exceeds the body limit
-         if (clinmb > conf->body_limit)
+         // check whether we got an uri with excluded request body
+         if (const char *exclude_uri_request_body_matched = search_regex_table(r->uri, conf->exclude_uri_request_body_table))
          {
             input_filter = false;
 
             if (APLOG_R_IS_LEVEL(r, request_log_level))
-               ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] the content-length is greater than the body limit", thread_id);
+               ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] matched exclude uri request body = %s", thread_id, exclude_uri_request_body_matched);
+         }
+         else
+         {
+            // retrieve request body content length
+            unsigned long clinmb = cl / 1'048'576L;
+            if (APLOG_R_IS_LEVEL(r, request_log_level))
+               ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] content length in MB = %lu", thread_id, clinmb);
+
+            // check whether the body length exceeds the body limit
+            if (clinmb > conf->body_limit)
+            {
+               input_filter = false;
+
+               if (APLOG_R_IS_LEVEL(r, request_log_level))
+                  ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] the content-length is greater than the body limit", thread_id);
+            }
+         }
+      }
+      else if (output_filter)
+      {
+         // check whether we got an uri with excluded response body
+         if (const char *exclude_uri_response_body_matched = search_regex_table(r->uri, conf->exclude_uri_response_body_table))
+         {
+            output_filter = false;
+
+            if (APLOG_R_IS_LEVEL(r, request_log_level))
+               ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] matched exclude uri response body = %s", thread_id, exclude_uri_response_body_matched);
          }
       }
    }
@@ -1266,7 +1280,7 @@ try {
    // print filter values out after basic checks
    if (APLOG_R_IS_LEVEL(r, request_log_level))
    {
-      ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] after checks", thread_id);
+      ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] after exclude body uri and content length checks", thread_id);
       ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] input_filter = %s", thread_id, to_char(input_filter));
       ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] output_filter = %s", thread_id, to_char(output_filter));
       ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] output_header = %s", thread_id, to_char(output_header));
@@ -1323,107 +1337,85 @@ try {
          input_filter_ctx->trace_uri = trace_uri;
          input_filter_ctx->conf = conf;
          input_filter_ctx->content_length_i = std::stoul(content_length);
-         input_filter_ctx->content_type.assign(content_type);
-         input_filter_ctx->query_string = input_filter_ctx->content_type.starts_with("application/x-www-form-urlencoded") && std::strcmp(r->method, "POST") == 0;
+         input_filter_ctx->query_string = std::string_view(content_type).starts_with("application/x-www-form-urlencoded") && std::strcmp(r->method, "POST") == 0;
          input_filter_ctx->start_i = 0;
          input_filter_ctx->elapsed = 0;
          input_filter_ctx->getline = 0;
 
-         const char *transfer_encoding = apr_table_get(r->headers_in, "Transfer-Encoding");
-         if (!transfer_encoding) transfer_encoding = "-";
-         if (cl > 0 || std::strstr(transfer_encoding, "chunked"))
+         if (trace_uri)
          {
-            if (input_filter_ctx->query_string)
+            if (APLOG_R_IS_LEVEL(r, request_log_level))
             {
-               if (APLOG_R_IS_LEVEL(r, request_log_level))
-               {
-                  ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] query string enabled (POST + application/x-www-form-urlencoded)", thread_id);
-                  ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] add WT_INPUT filter to read the request body", thread_id);
-               }
-
-               if (cl > 0) input_filter_ctx->body.reserve(cl);
-               ap_add_input_filter("WT_INPUT", input_filter_ctx, r, r->connection);
+               ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] forced input filter cause at least a trace uri matched (%s) (no content type)", thread_id, trace_uri_matched);
+               ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] add WT_INPUT filter to read the request body", thread_id);
             }
-            else if (std::strcmp(content_type, "-"))
+
+            if (cl > 0) input_filter_ctx->body.reserve(cl);
+            ap_add_input_filter("WT_INPUT", input_filter_ctx, r, r->connection);
+         }
+         else if (conf->request_body_type == e_always)
+         {
+            if (APLOG_R_IS_LEVEL(r, request_log_level))
             {
-               if (const char *ct_matched = search_regex_table(content_type, conf->content_table);
-                   ct_matched)
+               ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] request body type is always", thread_id);
+               ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] add WT_INPUT filter to read the request body", thread_id);
+            }
+
+            if (cl > 0) input_filter_ctx->body.reserve(cl);
+            ap_add_input_filter("WT_INPUT", input_filter_ctx, r, r->connection);
+         }
+         else
+         {
+            const char *transfer_encoding = apr_table_get(r->headers_in, "Transfer-Encoding");
+            if (!transfer_encoding) transfer_encoding = "-";
+            
+            if (cl > 0 || std::strstr(transfer_encoding, "chunked"))
+            {
+               if (input_filter_ctx->query_string)
                {
                   if (APLOG_R_IS_LEVEL(r, request_log_level))
                   {
-                     ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] matched Content-Type = %s", thread_id, ct_matched);
+                     ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] query string enabled (POST + application/x-www-form-urlencoded)", thread_id);
                      ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] add WT_INPUT filter to read the request body", thread_id);
                   }
 
                   if (cl > 0) input_filter_ctx->body.reserve(cl);
                   ap_add_input_filter("WT_INPUT", input_filter_ctx, r, r->connection);
                }
-               else if (!std::strcmp(r->method, "POST") && conf->enable_post_body)
+               else if (std::strcmp(content_type, "-"))
                {
-                  if (APLOG_R_IS_LEVEL(r, request_log_level))
+                  if (const char *ct_matched = search_regex_table(content_type, conf->content_table);
+                     ct_matched)
                   {
-                     ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] forced input filter cause post body enabled [%s]", thread_id, content_type);
-                     ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] add WT_INPUT filter to read the request body", thread_id);
-                  }
+                     if (APLOG_R_IS_LEVEL(r, request_log_level))
+                     {
+                        ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] matched Content-Type = %s", thread_id, ct_matched);
+                        ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] add WT_INPUT filter to read the request body", thread_id);
+                     }
 
-                  if (cl > 0) input_filter_ctx->body.reserve(cl);
-                  ap_add_input_filter("WT_INPUT", input_filter_ctx, r, r->connection);
-               }
-               else if (trace_uri)
-               {
-                  if (APLOG_R_IS_LEVEL(r, request_log_level))
-                  {
-                     ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] forced input filter cause at least a trace uri matched (%s) [%s]", thread_id, trace_uri_matched, content_type);
-                     ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] add WT_INPUT filter to read the request body", thread_id);
+                     if (cl > 0) input_filter_ctx->body.reserve(cl);
+                     ap_add_input_filter("WT_INPUT", input_filter_ctx, r, r->connection);
                   }
-                  
-                  if (cl > 0) input_filter_ctx->body.reserve(cl);
-                  ap_add_input_filter("WT_INPUT", input_filter_ctx, r, r->connection);
+                  else
+                  {
+                     if (APLOG_R_IS_LEVEL(r, request_log_level))
+                        ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] not matched any configured content types, forced input_filter to false", thread_id);
+                     input_filter = false;
+                  }
                }
                else
                {
                   if (APLOG_R_IS_LEVEL(r, request_log_level))
-                     ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] forced input_filter to false", thread_id);
+                     ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] content type header not found, forced input_filter to false", thread_id);
                   input_filter = false;
                }
             }
             else
             {
-               if (!std::strcmp(r->method, "POST") && conf->enable_post_body)
-               {
-                  if (APLOG_R_IS_LEVEL(r, request_log_level))
-                  {
-                     ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] forced input filter cause post body enabled (no content type)", thread_id);
-                     ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] add WT_INPUT filter to read the request body", thread_id);
-                  }
-
-                  if (cl > 0) input_filter_ctx->body.reserve(cl);
-                  ap_add_input_filter("WT_INPUT", input_filter_ctx, r, r->connection);
-               }
-               else if (trace_uri)
-               {
-                  if (APLOG_R_IS_LEVEL(r, request_log_level))
-                  {
-                     ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] forced input filter cause at least a trace uri matched (%s) (no content type)", thread_id, trace_uri_matched);
-                     ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] add WT_INPUT filter to read the request body", thread_id);
-                  }
-
-                  if (cl > 0) input_filter_ctx->body.reserve(cl);
-                  ap_add_input_filter("WT_INPUT", input_filter_ctx, r, r->connection);
-               }
-               else
-               {
-                  if (APLOG_R_IS_LEVEL(r, request_log_level))
-                     ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] forced input_filter to false", thread_id);
-                  input_filter = false;
-               }
+               if (APLOG_R_IS_LEVEL(r, request_log_level))
+                  ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] Content-Length = 0 and no Transfer-Encoding = chunked is present, forced input_filter to false", thread_id);
+               input_filter = false;
             }
-         }
-         else
-         {
-            if (APLOG_R_IS_LEVEL(r, request_log_level))
-               ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] Content-Length = 0 and no Transfer-Encoding = chunked is present, forced input_filter to false", thread_id);
-            input_filter = false;
          }
 
          // free memory if input filter is false
@@ -2475,19 +2467,110 @@ try {
       if (APLOG_R_IS_LEVEL(f->r, request_log_level))
          ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_output_filter(): [%ld] request_rec is present, search Content_Type", thread_id);
 
-      if (const char *content_type = apr_table_get(f->r->headers_out, "Content-Type");
-          content_type)
+      if (ctx->conf->response_body_type == e_content && !ctx->trace_uri)
       {
-         if (APLOG_R_IS_LEVEL(f->r, request_log_level))
-            ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_output_filter(): [%ld] Content-Type = %s", thread_id, content_type);
-
-         if (const char *ct_matched = search_regex_table(content_type, ctx->conf->content_table);
-             !ct_matched)
+         if (const char *content_type = apr_table_get(f->r->headers_out, "Content-Type"))
          {
             if (APLOG_R_IS_LEVEL(f->r, request_log_level))
-               ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_output_filter(): [%ld] the Content-Type doesn't match with the enabled Content-Types", thread_id);
+               ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_output_filter(): [%ld] Content-Type = %s", thread_id, content_type);
 
-            if (!ctx->output_header && !ctx->trace_uri)
+            if (const char *ct_matched = search_regex_table(content_type, ctx->conf->content_table);
+               !ct_matched)
+            {
+               if (APLOG_R_IS_LEVEL(f->r, request_log_level))
+                  ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_output_filter(): [%ld] not matched any configured content types", thread_id);
+
+               if (!ctx->output_header)
+               {
+                  // update elapsed times
+                  apr_time_t end_filter = apr_time_now();
+                  ctx->elapsed += end_filter - start_filter;
+
+                  // update module overhead for request
+                  module_overhead_for_current_request += ctx->elapsed;
+
+                  if (APLOG_R_IS_LEVEL(f->r, request_log_level))
+                  {
+                     apr_time_t elapsed = end_filter - ctx->start_o;
+                     ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_output_filter(): [%ld] ELAPSED TIMES: total = %s, filter = %s",
+                                 thread_id, to_string(elapsed).c_str(), to_string(ctx->elapsed).c_str());
+                     ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_output_filter(): [%ld] end (ap_pass_brigade)", thread_id);
+                  }
+
+                  // Delete active filter context
+                  f->ctx = nullptr;
+                  delete ctx;
+
+                  return ap_pass_brigade(f->next, bb);
+               }
+               else
+               {
+                  if (APLOG_R_IS_LEVEL(f->r, request_log_level))
+                     ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_output_filter(): [%ld] forced to continue cause there are headers to be removed", thread_id);
+
+                  ctx->output_filter = false;
+               }
+            }
+            else
+            {
+               if (APLOG_R_IS_LEVEL(f->r, request_log_level))
+                  ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_output_filter(): [%ld] Content-Type matched = %s", thread_id, ct_matched);
+
+               if (const char *content_length = apr_table_get(f->r->headers_out, "Content-Length"))
+               {
+                  unsigned long cl = std::stoul(content_length);
+                  unsigned long clinmb = cl / 1'048'576L;
+                  if (APLOG_R_IS_LEVEL(f->r, request_log_level))
+                     ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_output_filter(): [%ld] content length in MB = %lu", thread_id, clinmb);
+                  if (clinmb > ctx->conf->body_limit)
+                  {
+                     if (APLOG_R_IS_LEVEL(f->r, request_log_level))
+                        ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_output_filter(): [%ld] the reponse header content-length exceeded the body limit", thread_id);
+
+                     if (!ctx->output_header)
+                     {
+                        // update elapsed times
+                        apr_time_t end_filter = apr_time_now();
+                        ctx->elapsed += end_filter - start_filter;
+
+                        // update module overhead for request
+                        module_overhead_for_current_request += ctx->elapsed;
+
+                        if (APLOG_R_IS_LEVEL(f->r, request_log_level))
+                        {
+                           apr_time_t elapsed = end_filter - ctx->start_o;
+                           ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_output_filter(): [%ld] ELAPSED TIMES: total = %s, filter = %s",
+                                       thread_id, to_string(elapsed).c_str(), to_string(ctx->elapsed).c_str());
+                           ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_output_filter(): [%ld] end (ap_pass_brigade)", thread_id);
+                        }
+
+                        // Delete active filter context
+                        f->ctx = nullptr;
+                        delete ctx;
+
+                        return ap_pass_brigade(f->next, bb);
+                     }
+                     else
+                     {
+                        if (APLOG_R_IS_LEVEL(f->r, request_log_level))
+                           ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_output_filter(): [%ld] forced to continue cause there are headers to be removed", thread_id);
+
+                        ctx->output_filter = false;
+                     }
+                  }
+                  else
+                  {
+                     if (cl > 0) ctx->body.reserve(cl);
+                  }
+               }
+            }
+         }
+         else
+         {
+            if (APLOG_R_IS_LEVEL(f->r, request_log_level))
+               ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_output_filter(): [%ld] response header content-type is empty", thread_id);
+
+            if (!ctx->output_header)
             {
                // update elapsed times
                apr_time_t end_filter = apr_time_now();
@@ -2500,7 +2583,7 @@ try {
                {
                   apr_time_t elapsed = end_filter - ctx->start_o;
                   ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_output_filter(): [%ld] ELAPSED TIMES: total = %s, filter = %s",
-                                thread_id, to_string(elapsed).c_str(), to_string(ctx->elapsed).c_str());
+                              thread_id, to_string(elapsed).c_str(), to_string(ctx->elapsed).c_str());
                   ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_output_filter(): [%ld] end (ap_pass_brigade)", thread_id);
                }
 
@@ -2510,120 +2593,24 @@ try {
 
                return ap_pass_brigade(f->next, bb);
             }
-            else if (!ctx->trace_uri)
+            else
             {
                if (APLOG_R_IS_LEVEL(f->r, request_log_level))
                   ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_output_filter(): [%ld] forced to continue cause there are headers to be removed", thread_id);
 
                ctx->output_filter = false;
             }
-            else
-            {
-               if (APLOG_R_IS_LEVEL(f->r, request_log_level))
-                  ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_output_filter(): [%ld] forced to continue cause at least a trace uri matched (output_header: %s)", thread_id, to_char(ctx->output_header));
-            }
-         }
-         else
-         {
-            if (APLOG_R_IS_LEVEL(f->r, request_log_level))
-               ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_output_filter(): [%ld] Content-Type matched = %s", thread_id, ct_matched);
          }
       }
-      else
+      else if (ctx->conf->response_body_type == e_always)
       {
          if (APLOG_R_IS_LEVEL(f->r, request_log_level))
-            ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_output_filter(): [%ld] Content-Type is empty", thread_id);
-
-         if (!ctx->output_header && !ctx->trace_uri)
-         {
-            // update elapsed times
-            apr_time_t end_filter = apr_time_now();
-            ctx->elapsed += end_filter - start_filter;
-
-            // update module overhead for request
-            module_overhead_for_current_request += ctx->elapsed;
-
-            if (APLOG_R_IS_LEVEL(f->r, request_log_level))
-            {
-               apr_time_t elapsed = end_filter - ctx->start_o;
-               ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_output_filter(): [%ld] ELAPSED TIMES: total = %s, filter = %s",
-                             thread_id, to_string(elapsed).c_str(), to_string(ctx->elapsed).c_str());
-               ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_output_filter(): [%ld] end (ap_pass_brigade)", thread_id);
-            }
-
-            // Delete active filter context
-            f->ctx = nullptr;
-            delete ctx;
-
-            return ap_pass_brigade(f->next, bb);
-         }
-         else if (!ctx->trace_uri)
-         {
-            if (APLOG_R_IS_LEVEL(f->r, request_log_level))
-               ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_output_filter(): [%ld] forced to continue cause there are headers to be removed", thread_id);
-
-            ctx->output_filter = false;
-         }
-         else
-         {
-            if (APLOG_R_IS_LEVEL(f->r, request_log_level))
-               ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_output_filter(): [%ld] forced to continue cause at least a trace uri matched (output_header: %s)", thread_id, to_char(ctx->output_header));
-         }
+            ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_output_filter(): [%ld] response body type is always", thread_id);
       }
-      
-      if (const char *content_length = apr_table_get(f->r->headers_out, "Content-Length"); 
-          content_length)
+      else if (ctx->trace_uri)
       {
-         unsigned long cl = std::stoul(content_length);
-         unsigned long clinmb = cl / 1'048'576L;
          if (APLOG_R_IS_LEVEL(f->r, request_log_level))
-            ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_output_filter(): [%ld] content length in MB = %lu", thread_id, clinmb);
-         if (clinmb > ctx->conf->body_limit)
-         {
-            if (APLOG_R_IS_LEVEL(f->r, request_log_level))
-               ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_output_filter(): [%ld] the Content-Length exceeded the body limit", thread_id);
-
-            if (!ctx->output_header && !ctx->trace_uri)
-            {
-               // update elapsed times
-               apr_time_t end_filter = apr_time_now();
-               ctx->elapsed += end_filter - start_filter;
-
-               // update module overhead for request
-               module_overhead_for_current_request += ctx->elapsed;
-
-               if (APLOG_R_IS_LEVEL(f->r, request_log_level))
-               {
-                  apr_time_t elapsed = end_filter - ctx->start_o;
-                  ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_output_filter(): [%ld] ELAPSED TIMES: total = %s, filter = %s",
-                                thread_id, to_string(elapsed).c_str(), to_string(ctx->elapsed).c_str());
-                  ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_output_filter(): [%ld] end (ap_pass_brigade)", thread_id);
-               }
-
-               // Delete active filter context
-               f->ctx = nullptr;
-               delete ctx;
-
-               return ap_pass_brigade(f->next, bb);
-            }
-            else if (!ctx->trace_uri)
-            {
-               if (APLOG_R_IS_LEVEL(f->r, request_log_level))
-                  ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_output_filter(): [%ld] forced to continue cause there are headers to be removed", thread_id);
-
-               ctx->output_filter = false;
-            }
-            else
-            {
-               if (APLOG_R_IS_LEVEL(f->r, request_log_level))
-                  ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_output_filter(): [%ld] forced to continue cause at least a trace uri matched (output_header: %s)", thread_id, to_char(ctx->output_header));
-               ctx->body.reserve(cl);
-            }
-         }
-         else
-         {
-            if (cl > 0) ctx->body.reserve(cl);
-         }
+            ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_output_filter(): [%ld] forced to continue cause at least a trace uri matched (output_header: %s)", thread_id, to_char(ctx->output_header));
       }
    }
 
