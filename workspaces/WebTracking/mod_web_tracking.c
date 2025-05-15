@@ -2,6 +2,9 @@
 
 /*
  * VERSION       DATE        DESCRIPTION
+ * 2025.5.15.1  2025-05-15   Add directive WebTrackingConfigVersion
+ *                           Fix syntax for directive WebTrackingRequestBodyType
+ *                           Fix syntax for directive WebTrackingResponseBodyType
  * 2025.5.12.1  2025-05-12   Add directive WebTrackingRequestBodyType
  *                           Add directive WebTrackingResponseBodyType
  *                           Add directive WebTrackingExcludeURIRequestBody
@@ -183,7 +186,7 @@ APLOG_USE_MODULE(web_tracking);
 #endif
 
 // version
-const char *version = "Web Tracking Apache Module 2025.5.12.1 (C17/C++23)";
+const char *version = "Web Tracking Apache Module 2025.5.15.1 (C17/C++23)";
 
 wt_counter_t *wt_counter = 0;
 static apr_shm_t *shm_counter = 0;
@@ -193,6 +196,9 @@ APR_DECLARE_OPTIONAL_FN(int, ssl_is_https, (conn_rec *));
 static void *create_server_config(apr_pool_t *p, server_rec *s)
 {
    wt_config_t *conf = apr_pcalloc(p, sizeof(wt_config_t));
+
+   // confg version defaulted to nothing
+   conf->config_version = 0;
 
    char hostname[256 + 1] = { 0 };
    gethostname(hostname, 256);
@@ -240,6 +246,20 @@ static void *create_server_config(apr_pool_t *p, server_rec *s)
    apr_atomic_set32(&conf->total_requests, 0);
 
    return conf;
+}
+
+static const char *wt_tracking_config_version(cmd_parms *cmd, void *dummy, const char *version)
+{
+   wt_config_t *conf = ap_get_module_config(cmd->server->module_config, &web_tracking_module);
+
+   if (conf->config_version)
+   {
+      return "ERROR: Web Tracking Apache Module: The directive WebTrackingConfigVersion must be defined only once";
+   }
+
+   conf->config_version = version;
+
+   return OK;
 }
 
 static const char *wt_tracking_uuid_header(cmd_parms *cmd, void *dummy, const char *header)
@@ -963,6 +983,7 @@ static int post_config(apr_pool_t *pconf, apr_pool_t *plog, apr_pool_t *ptemp, s
       // Print out configuration settings
       if (APLOG_IS_LEVEL(s, APLOG_INFO))
       { 
+         if (conf->config_version) ap_log_error(APLOG_MARK, APLOG_INFO, 0, s, "web_tracking_module: [%d] config version = %s", pid, conf->config_version);
          ap_log_error(APLOG_MARK, APLOG_INFO, 0, s, "web_tracking_module: [%d] hostname = %s", pid, conf->hostname);
          ap_log_error(APLOG_MARK, APLOG_INFO, 0, s, "web_tracking_module: [%d] uuid header = %s", pid, (conf->uuid_header != NULL ? conf->uuid_header : "NULL"));
          ap_log_error(APLOG_MARK, APLOG_INFO, 0, s, "web_tracking_module: [%d] disable = %s", pid, (conf->disable == 1 ? "On" : "Off"));
@@ -1201,6 +1222,7 @@ static int wt_status_hook(request_rec *r, int flags)
       ap_rprintf(r, "         <dl>\n");
       ap_rprintf(r, "            <dt>Version: <b>%s</b></dt>\n", version);
       ap_rprintf(r, "            <dt>Hostname: <b>%s</b></dt>\n", conf->hostname);
+      if (conf->config_version) ap_rprintf(r, "            <dt>Config: <b>%s</b></dt>\n", conf->config_version);
       ap_rprintf(r, "         </dl>\n");
 
       char formatted[32];
@@ -1276,6 +1298,7 @@ static void register_hooks(apr_pool_t *p)
 
 static const command_rec config_cmds[] =
 {
+   AP_INIT_TAKE1("WebTrackingConfigVersion", wt_tracking_config_version, NULL, RSRC_CONF, "WebTrackingConfigVersion <string>"),
    AP_INIT_TAKE1("WebTrackingUuidHeader", wt_tracking_uuid_header, NULL, RSRC_CONF, "WebTrackingUuidHeader <string>"),
    AP_INIT_TAKE1("WebTrackingBodyLimit", wt_tracking_body_limit, NULL, RSRC_CONF, "WebTrackingLimitBody <number> MB"),
    AP_INIT_TAKE1("WebTrackingSSLIndicator", wt_tracking_ssl_indicator, NULL, RSRC_CONF, "WebTrackingSSLIndicator <string>"),
@@ -1285,8 +1308,8 @@ static const command_rec config_cmds[] =
    AP_INIT_FLAG("WebTrackingHttpsEnabled", wt_tracking_https_enabled, NULL, RSRC_CONF, "WebTrackingHttpsEnabled On | Off"),
    AP_INIT_FLAG("WebTrackingInflateResponse", wt_tracking_inflate_response, NULL, RSRC_CONF, "WebTrackingInflateResponse On | Off"),
    AP_INIT_FLAG("WebTrackingEnableProxy", wt_tracking_enable_proxy, NULL, RSRC_CONF, "WebTrackingEnableProxy On | Off"),
-   AP_INIT_TAKE1("WebTrackingRequestBodyType", wt_tracking_request_body_type, NULL, RSRC_CONF, "WebTrackingRequestBodyType always|content|never"),
-   AP_INIT_TAKE1("WebTrackingResponseBodyType", wt_tracking_response_body_type, NULL, RSRC_CONF, "WebTrackingResponseBodyType always|content|never"),
+   AP_INIT_TAKE1("WebTrackingRequestBodyType", wt_tracking_request_body_type, NULL, RSRC_CONF, "WebTrackingRequestBodyType Always|Content|Never"),
+   AP_INIT_TAKE1("WebTrackingResponseBodyType", wt_tracking_response_body_type, NULL, RSRC_CONF, "WebTrackingResponseBodyType Always|Content|Never"),
    AP_INIT_ITERATE("WebTrackingDisablingHeader", wt_tracking_disabling_header, NULL, RSRC_CONF, "WebTrackingDisablingHeader {<string>}+"),
    AP_INIT_ITERATE("WebTrackingOutputHeader", wt_tracking_output_header, NULL, RSRC_CONF, "WebTrackingOutputHeader {<string>}+"),
    AP_INIT_ITERATE("WebTrackingPrintEnvVar", wt_tracking_print_envvar, NULL, RSRC_CONF, "WebTrackingPrintEnvVar {<string>}+"),

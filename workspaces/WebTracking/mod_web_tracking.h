@@ -56,6 +56,7 @@ struct wt_config_s
   unsigned short proxy;
   unsigned short body_limit;
 
+  const char *config_version;
   const char *hostname;
   const char *uuid_header;
   const char *ssl_indicator;
