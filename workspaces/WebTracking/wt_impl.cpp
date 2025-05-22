@@ -6,7 +6,7 @@
 #include <list>
 #include <cstdarg>
 #include <cstring>
-#include <set>
+#include <unordered_set>
 
 namespace
 {
@@ -630,6 +630,7 @@ std::string wt_inflate(const std::string &in, int wrap)
    return plain;
 }
 
+using t_set_table = std::unordered_set<std::string>;
 bool value_set_contains(void *set, const char *value);
 const char *value_set_starts_with(void *set, const char *value);
 
@@ -641,13 +642,13 @@ int log_headers_cpp(void *rec, const char *key, const char *value)
 
    if (record->conf->header_set)
    {
-      std::set<std::string> *local_set = static_cast<std::set<std::string> *>(record->conf->header_set);
+      t_set_table *local_set = static_cast<t_set_table *>(record->conf->header_set);
       for (const std::string &header : *local_set) if (!strcasecmp(key, header.c_str())) return 1;
    }
 
    if (record->conf->header_value_set)
    {
-      std::set<std::string> *local_set = static_cast<std::set<std::string> *>(record->conf->header_value_set);
+      t_set_table *local_set = static_cast<t_set_table *>(record->conf->header_value_set);
       for (const std::string &header : *local_set)
       {
          if (!strcasecmp(key, header.c_str()))
@@ -729,7 +730,7 @@ int log_envvars_cpp(void *rec, const char *key, const char *value)
 
    if (record->conf->envvar_set)
    {
-      std::set<std::string> *local_set = static_cast<std::set<std::string> *>(record->conf->envvar_set);
+      t_set_table *local_set = static_cast<t_set_table *>(record->conf->envvar_set);
       for (const std::string &envvar : *local_set)
       {
          if (!strcasecmp(key, envvar.c_str()))
@@ -756,7 +757,7 @@ extern "C" void initialize_pid_and_regular_expressions(pid_t pid, const wt_confi
    // cookies
    if (conf->exclude_cookie_set)
    {
-      std::set<std::string> *local_set = static_cast<std::set<std::string> *>(conf->exclude_cookie_set);
+      t_set_table *local_set = static_cast<t_set_table *>(conf->exclude_cookie_set);
       for (const std::string &cookie : *local_set)
       {
          try { cookies_re.push_back(std::regex { std::format(cookie_pattern, cookie) }); }
@@ -769,7 +770,7 @@ extern "C" void initialize_pid_and_regular_expressions(pid_t pid, const wt_confi
    // parameters
    if (conf->exclude_parameter_set)
    {
-      std::set<std::string> *local_set = static_cast<std::set<std::string> *>(conf->exclude_parameter_set);
+      t_set_table *local_set = static_cast<t_set_table *>(conf->exclude_parameter_set);
       for (const std::string &parameter : *local_set)
       {
          try { parameters_re.push_back(std::regex { std::format(parameter_pattern, parameter) }); }
@@ -780,7 +781,7 @@ extern "C" void initialize_pid_and_regular_expressions(pid_t pid, const wt_confi
    // headers
    if (conf->output_header_set)
    {
-      std::set<std::string> *local_set = static_cast<std::set<std::string> *>(conf->output_header_set);
+      t_set_table *local_set = static_cast<t_set_table *>(conf->output_header_set);
       for (const std::string &header: *local_set)
       {
          try { headers_re.push_back(std::regex { std::format(header_pattern, header), std::regex::icase }); }
@@ -972,7 +973,7 @@ try {
       // check whether we got a disabling header
       if (conf->header_off_set)
       {
-         std::set<std::string> *local_set = static_cast<std::set<std::string> *>(conf->header_off_set);
+         t_set_table *local_set = static_cast<t_set_table *>(conf->header_off_set);
          for (const std::string &header: *local_set)
          {
             if (apr_table_get(r->headers_in, header.c_str()))
@@ -3044,14 +3045,14 @@ catch (const std::exception &err)
 
 extern "C" void *value_set_allocate()
 {
-   return new std::set<std::string>{};
+   return new t_set_table {};
 }
 
 extern "C" void value_set_delete(void *set)
 {
    if (set)
    {
-      std::set<std::string> *local_set = static_cast<std::set<std::string> *>(set);
+      t_set_table *local_set = static_cast<t_set_table *>(set);
       delete local_set;
    }
 }
@@ -3060,7 +3061,7 @@ extern "C" void value_set_add(void *set, const char *value)
 {
    if (set)
    {
-      std::set<std::string> *local_set = static_cast<std::set<std::string> *>(set);
+      t_set_table *local_set = static_cast<t_set_table *>(set);
       local_set->insert(value);
    }
 }
@@ -3069,7 +3070,7 @@ extern "C" unsigned int value_set_size(void *set)
 {
    if (set)
    {
-      std::set<std::string> *local_set = static_cast<std::set<std::string> *>(set);
+      t_set_table *local_set = static_cast<t_set_table *>(set);
       return local_set->size();
    }
 
@@ -3080,7 +3081,7 @@ extern "C" const char **value_set_to_array(void *set, unsigned long *length)
 {
    if (set)
    {
-      std::set<std::string> *local_set = static_cast<std::set<std::string> *>(set);
+      t_set_table *local_set = static_cast<t_set_table *>(set);
       
       // empty
       if (local_set->empty())
@@ -3110,7 +3111,7 @@ bool value_set_contains(void *set, const char *value)
 {
    if (set && value)
    {
-      std::set<std::string> *local_set = static_cast<std::set<std::string> *>(set);
+      t_set_table *local_set = static_cast<t_set_table *>(set);
       return local_set->contains(value);
    }
 
@@ -3122,7 +3123,7 @@ const char *value_set_starts_with(void *set, const char *value)
    if (set && value)
    {
       std::string_view v_value { value };
-      std::set<std::string> *local_set = static_cast<std::set<std::string> *>(set);
+      t_set_table *local_set = static_cast<t_set_table *>(set);
       for (const std::string &uri : *local_set)
       {
          if (v_value.starts_with(uri)) return uri.c_str();

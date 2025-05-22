@@ -2,6 +2,10 @@
 
 /*
  * VERSION       DATE        DESCRIPTION
+ * 2025.5.22.1  2025-05-22   Add configuration checks on directive WebTrackingExactURI
+ *                           Add configuration checks on directive WebTrackingStartsWithURI
+ *                           Add configuration checks on directive WebTrackingExcludeExactURI
+ *                           Add configuration checks on directive WebTrackingExcludeStartsWithURI
  * 2025.5.15.1  2025-05-15   Add directive WebTrackingConfigVersion
  *                           Fix syntax for directive WebTrackingRequestBodyType
  *                           Fix syntax for directive WebTrackingResponseBodyType
@@ -186,7 +190,7 @@ APLOG_USE_MODULE(web_tracking);
 #endif
 
 // version
-const char *version = "Web Tracking Apache Module 2025.5.15.1 (C17/C++23)";
+const char *version = "Web Tracking Apache Module 2025.5.22.1 (C17/C++23)";
 
 wt_counter_t *wt_counter = 0;
 static apr_shm_t *shm_counter = 0;
@@ -438,6 +442,11 @@ static const char *wt_tracking_uri(cmd_parms *cmd, void *dummy, const char *uri_
 
 static const char *wt_tracking_exact_uri(cmd_parms *cmd, void *dummy, const char *uri)
 {
+   if (uri[0] != '/')
+   {
+      return "ERROR: Web Tracking Apache Module: The directive WebTrackingExactURI must start with '/'";
+   }
+   
    wt_config_t *conf = ap_get_module_config(cmd->server->module_config, &web_tracking_module);
 
    value_set_add(conf->exact_uri_set, uri);
@@ -447,6 +456,11 @@ static const char *wt_tracking_exact_uri(cmd_parms *cmd, void *dummy, const char
 
 static const char *wt_tracking_starts_with_uri(cmd_parms *cmd, void *dummy, const char *uri)
 {
+   if (uri[0] != '/')
+   {
+      return "ERROR: Web Tracking Apache Module: The directive WebTrackingStartsWithURI must start with '/'";
+   }
+
    wt_config_t *conf = ap_get_module_config(cmd->server->module_config, &web_tracking_module);
 
    value_set_add(conf->starts_with_uri_set, uri);
@@ -456,6 +470,11 @@ static const char *wt_tracking_starts_with_uri(cmd_parms *cmd, void *dummy, cons
 
 static const char *wt_tracking_exclude_exact_uri(cmd_parms *cmd, void *dummy, const char *uri)
 {
+   if (uri[0] != '/')
+   {
+      return "ERROR: Web Tracking Apache Module: The directive WebTrackingExcludeExactURI must start with '/'";
+   }
+
    wt_config_t *conf = ap_get_module_config(cmd->server->module_config, &web_tracking_module);
 
    value_set_add(conf->exclude_exact_uri_set, uri);
@@ -465,6 +484,11 @@ static const char *wt_tracking_exclude_exact_uri(cmd_parms *cmd, void *dummy, co
 
 static const char *wt_tracking_exclude_starts_with_uri(cmd_parms *cmd, void *dummy, const char *uri)
 {
+   if (uri[0] != '/')
+   {
+      return "ERROR: Web Tracking Apache Module: The directive WebTrackingExcludeStartsWithURI must start with '/'";
+   }
+
    wt_config_t *conf = ap_get_module_config(cmd->server->module_config, &web_tracking_module);
 
    value_set_add(conf->exclude_starts_with_uri_set, uri);
