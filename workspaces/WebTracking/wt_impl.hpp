@@ -1,8 +1,8 @@
 #ifndef WT_IMPL_HPP_
 #define WT_IMPL_HPP_
 
+#include <http_request.h>
 #include "mod_web_tracking.h"
-#include "http_request.h"
 
 #ifdef __cplusplus
 extern "C" 

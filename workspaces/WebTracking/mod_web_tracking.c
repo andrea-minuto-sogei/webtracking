@@ -2,6 +2,9 @@
 
 /*
  * VERSION       DATE        DESCRIPTION
+ * 2025.5.27.1  2025-05-27   Fix include header files syntax
+ *                           Add response elapsed time and log file name in metrics records
+ *                           Fix log record length in metrics to be formatted (base 1024) 
  * 2025.5.22.1  2025-05-22   Add configuration checks on directive WebTrackingExactURI
  *                           Add configuration checks on directive WebTrackingStartsWithURI
  *                           Add configuration checks on directive WebTrackingExcludeExactURI
@@ -150,18 +153,18 @@
 #define PATH_MAX 1024
 
 /* Apache Web Server Header Files */
-#include "httpd.h"
-#include "http_config.h"
-#include "http_log.h"
-#include "http_protocol.h"
-#include "http_request.h"
-#include "apr_strings.h"
-#include "apr_atomic.h"
-#include "apr_optional.h"
-#include "apr_lib.h"
-#include "ap_regex.h"
-#include "http_main.h"
-#include "mod_status.h"
+#include <httpd.h>
+#include <http_config.h>
+#include <http_log.h>
+#include <http_protocol.h>
+#include <http_request.h>
+#include <apr_strings.h>
+#include <apr_atomic.h>
+#include <apr_optional.h>
+#include <apr_lib.h>
+#include <ap_regex.h>
+#include <http_main.h>
+#include <mod_status.h>
 
 /* Linux Header Files */
 #include <unistd.h>
@@ -190,7 +193,7 @@ APLOG_USE_MODULE(web_tracking);
 #endif
 
 // version
-const char *version = "Web Tracking Apache Module 2025.5.22.1 (C17/C++23)";
+const char *version = "Web Tracking Apache Module 2025.5.27.1 (C17/C++23)";
 
 wt_counter_t *wt_counter = 0;
 static apr_shm_t *shm_counter = 0;

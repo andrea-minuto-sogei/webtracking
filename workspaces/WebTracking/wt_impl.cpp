@@ -483,18 +483,18 @@ std::string base64encode(const std::string &input) noexcept
 /* APACHE MODULE IMPLEMENTATION FUNCTIONS */
 
 // Apache Web Server Header Files
-#include "httpd.h"
-#include "http_config.h"
-#include "http_log.h"
-#include "http_protocol.h"
-#include "http_request.h"
-#include "apr_strings.h"
-#include "apr_atomic.h"
-#include "apr_optional.h"
-#include "apr_lib.h"
-#include "ap_regex.h"
-#include "http_main.h"
-#include "mod_status.h"
+#include <httpd.h>
+#include <http_config.h>
+#include <http_log.h>
+#include <http_protocol.h>
+#include <http_request.h>
+#include <apr_strings.h>
+#include <apr_atomic.h>
+#include <apr_optional.h>
+#include <apr_lib.h>
+#include <ap_regex.h>
+#include <http_main.h>
+#include <mod_status.h>
 
 // Linux Header Files
 #include <unistd.h>
@@ -505,7 +505,7 @@ std::string base64encode(const std::string &input) noexcept
 #include <sys/syscall.h>
 
 /* Compression Library Header Files */
-#include "zutil.h"
+#include <zutil.h>
 
 // C++ implementation functions header file
 #include "wt_impl.hpp"
@@ -523,6 +523,14 @@ static std::string to_string(apr_time_t elapsed)
    if (elapsed < 1'000L) return format_string("%" APR_TIME_T_FMT " us", elapsed);
    if (elapsed < 1'000'000L) return format_string("%.3f ms", elapsed / 1'000.0);
    return format_string("%.3f s", elapsed / 1'000'000.0);
+}
+
+static std::string format_bytes(std::size_t bytes)
+{
+   if (bytes < 1'024) return std::to_string(bytes);
+   if (bytes < 1'048'576) return std::format("{:.3f} KB", bytes / 1'024.0);
+   if (bytes < 1'073'741'824) return std::format("{:.3f} MB", bytes / 1'048'576.0);
+   return std::format("{:.3f} GB", bytes / 1'073'741'824.0);
 }
 
 inline const char *to_char(bool value)
@@ -1702,6 +1710,8 @@ try {
       {
          // write record log data
          bool is_write_ok = wt_record_write(record_data);
+         const char *current_file = wt_record_current_name();
+         if (!current_file) current_file = "-";
 
          // release all locks
          APR_ANYLOCK_UNLOCK(&conf->record_thread_mutex);
@@ -1717,10 +1727,10 @@ try {
             {
                std::string elapsed_t { to_string(module_overhead_for_current_request) };
                std::string elapsed_w { to_string(write_end - write_start) };
-               ap_log_error(APLOG_MARK, APLOG_INFO, 0, r->server, "[WT-METRICS: %s | %s | %s | %d | %s | %s | %s | %ld | %s]", 
-                                                                  uuid, appid, r->uri, r->status, elapsed_t.c_str(), 
+               ap_log_error(APLOG_MARK, APLOG_INFO, 0, r->server, "[WT-METRICS: %s | %s | %s | %d | %s | %s | %s | %s | %s | %s | %s]", 
+                                                                  uuid, appid, r->uri, r->status, elapsed.c_str(), elapsed_t.c_str(), 
                                                                   (has_request_body ? "REQUEST" : "NO"), (has_response_body ? "RESPONSE" : "NO"), 
-                                                                  record_data.length(), elapsed_w.c_str());
+                                                                  format_bytes(record_data.length()).c_str(), elapsed_w.c_str(), current_file);
             }
             
             if (APLOG_R_IS_LEVEL(r, request_log_level))
@@ -1732,10 +1742,10 @@ try {
             {
                std::string elapsed_t { to_string(module_overhead_for_current_request) };
                std::string elapsed_w { to_string(write_end - write_start) };
-               ap_log_error(APLOG_MARK, APLOG_INFO, 0, r->server, "[WT-METRICS: %s | %s | %s | %d | %s | %s | %s | KO | %s]", 
-                                                                  uuid, appid, r->uri, r->status, elapsed_t.c_str(), 
+               ap_log_error(APLOG_MARK, APLOG_INFO, 0, r->server, "[WT-METRICS: %s | %s | %s | %d | %s | %s | %s | %s | KO | %s | %s]", 
+                                                                  uuid, appid, r->uri, r->status, elapsed.c_str(), elapsed_t.c_str(), 
                                                                   (has_request_body ? "REQUEST" : "NO"), (has_response_body ? "RESPONSE" : "NO"), 
-                                                                  elapsed_w.c_str());
+                                                                  elapsed_w.c_str(), current_file);
             }
 
             if (APLOG_IS_LEVEL(r->server, APLOG_ALERT))
