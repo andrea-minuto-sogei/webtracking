@@ -81,7 +81,7 @@ The module is distributed as a shared library:
 
 ### 🧾 Special Headers
 
-- **Tracking UUID Header**: Injected per request (default: `X-WTUUID`)
+- **Tracking UUID Header**: Injected per request (default: `X-WT-UUID`)
 - **Sentinel Header**: `x-wt-request-to-be-tracked` signals tracking is active
 
 ## 🛠️ Configuration Directives
