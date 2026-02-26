@@ -815,7 +815,8 @@ bool is_body_supported(std::string_view method)
 }
 
 extern "C" int post_read_request_impl(request_rec *r)
-try {
+try 
+{
    // thread local variable
    thread_id = syscall(SYS_gettid);
 
@@ -823,7 +824,7 @@ try {
    if (const char *temp = apr_table_get(r->headers_in, "Host"); temp) host = temp;
    if (!host) host = r->hostname;
    if (!host) host = "-";
-   
+
    // thread local variable
    request_log_level = is_debug_enabled(host, r->uri) ? APLOG_INFO : APLOG_DEBUG;
 
@@ -937,16 +938,6 @@ try {
       return OK;
    }
 
-   // trace enabled for request uri?
-   bool trace_uri = false;
-   const char *trace_uri_matched = search_regex_table(r->uri, conf->trace_uri_table);
-   if (trace_uri_matched)
-   {
-      if (APLOG_R_IS_LEVEL(r, request_log_level))
-         ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] matched trace uri = %s", thread_id, trace_uri_matched);
-      trace_uri = true;
-   }
-
    // get scheme
    const char *scheme = conn_is_https(r->connection, conf, r->headers_in) ? "https" : "http";
    if (APLOG_R_IS_LEVEL(r, request_log_level))
@@ -955,27 +946,38 @@ try {
    // get remote ip
    const char *remote_ip = r->useragent_ip;
    if (APLOG_R_IS_LEVEL(r, request_log_level))
-      ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] remote_ip = %s", thread_id, remote_ip);
+   ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] remote_ip = %s", thread_id, remote_ip);
    if (conf->proxy)
    {
       if (APLOG_R_IS_LEVEL(r, request_log_level))
-         ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] proxy management enabled", thread_id);
-
+      ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] proxy management enabled", thread_id);
+      
       const char *clientip = apr_table_get(r->headers_in, conf->clientip_header ? conf->clientip_header : "X-Forwarded-For");
       if (clientip)
       {
          if (APLOG_R_IS_LEVEL(r, request_log_level))
-            ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] %s = %s", thread_id, conf->clientip_header ? conf->clientip_header : "X-Forwarded-For", clientip);
+         ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] %s = %s", thread_id, conf->clientip_header ? conf->clientip_header : "X-Forwarded-For", clientip);
          remote_ip = clientip;
       }
       else
       {
          if (APLOG_R_IS_LEVEL(r, request_log_level))
-            ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] %s header is not present though the proxy management is enabled", thread_id, 
-                        conf->clientip_header ? conf->clientip_header : "X-Forwarded-For");
+         ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] %s header is not present though the proxy management is enabled", thread_id, 
+            conf->clientip_header ? conf->clientip_header : "X-Forwarded-For");
       }
    }
 
+   // trace enabled for request uri?
+   bool trace_uri = false;
+   const char *trace_uri_matched = search_regex_table(r->uri, conf->trace_uri_table);
+   if (trace_uri_matched)
+   {
+      if (APLOG_R_IS_LEVEL(r, request_log_level))
+         ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] matched trace uri = %s", thread_id, trace_uri_matched);
+      trace_uri = true;
+      apr_table_setn(r->notes, "wt_tracking_type", "TRACE");
+   }
+      
    if (!trace_uri)
    {
       // check whether we got a disabling header
@@ -992,54 +994,38 @@ try {
                   std::string elapsed{to_string(apr_time_now() - start)};
                   ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] end (OK) - %s", thread_id, elapsed.c_str());
                }
-
+               
                return OK;
             }
          }
       }
 
-      // check whether we got an exact uri to be tracked
-      if (!value_set_contains(conf->exact_host_set, host))
+      // get full url
+      std::string full_url = std::format("{}://{}{}", scheme, host, r->uri); 
+      if (APLOG_R_IS_LEVEL(r, request_log_level))
+         ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] full_url = %s", thread_id, full_url.c_str());
+         
+      // check whether we got an URL pattern to be tracked
+      const char *url_matched = search_regex_table(full_url.c_str(), conf->url_pattern_table);
+      if (url_matched)
       {
-         // check whether we got an host to be tracked
-         if (const char *host_matched = search_regex_table(host, conf->host_table);
-            !host_matched)
-         {
-            if (APLOG_R_IS_LEVEL(r, request_log_level))
-            {
-               ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] neither exact host nor regex host is matched against the host request header", thread_id);
-               std::string elapsed { to_string(apr_time_now() - start) };
-               ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] end (OK) - %s", thread_id, elapsed.c_str());
-            }
+         if (APLOG_R_IS_LEVEL(r, request_log_level))
+               ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] matched url pattern = %s", thread_id, url_matched);
 
-            return OK;
-         }
-         else
-         {
-            if (APLOG_R_IS_LEVEL(r, request_log_level))
-               ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] matched host = %s", thread_id, host_matched);
-         }
+         apr_table_setn(r->notes, "wt_tracking_type", "URL PATTERN");
       }
       else
       {
-         if (APLOG_R_IS_LEVEL(r, request_log_level))
-            ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] matched exact host = %s", thread_id, host);
-      }
-
-      // check whether we got an exact uri to be tracked
-      if (!value_set_contains(conf->exact_uri_set, r->uri))
-      {
-         // check whether we got a starts with uri to be tracked
-         if (const char *uri_starts_with = value_set_starts_with(conf->starts_with_uri_set, r->uri);
-             !uri_starts_with)
+         // check whether we got an exact uri to be tracked
+         if (!value_set_contains(conf->exact_host_set, host))
          {
-            // check whether we got a regex uri to be tracked
-            if (const char *uri_matched = search_regex_table(r->uri, conf->uri_table);
-               !uri_matched)
+            // check whether we got an host to be tracked
+            if (const char *host_matched = search_regex_table(host, conf->host_table);
+               !host_matched)
             {
                if (APLOG_R_IS_LEVEL(r, request_log_level))
                {
-                  ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] neither exact uri nor starts with uri nor regex uri is matched against the current uri", thread_id);
+                  ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] neither exact host nor regex host is matched against the host request header", thread_id);
                   std::string elapsed { to_string(apr_time_now() - start) };
                   ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] end (OK) - %s", thread_id, elapsed.c_str());
                }
@@ -1049,19 +1035,58 @@ try {
             else
             {
                if (APLOG_R_IS_LEVEL(r, request_log_level))
-                  ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] matched regex uri = %s", thread_id, uri_matched);
+                  ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] matched host = %s", thread_id, host_matched);
             }
          }
          else
          {
             if (APLOG_R_IS_LEVEL(r, request_log_level))
-               ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] matched starts with uri = %s", thread_id, uri_starts_with);
+               ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] matched exact host = %s", thread_id, host);
          }
-      }
-      else
-      {
-         if (APLOG_R_IS_LEVEL(r, request_log_level))
-            ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] matched exact uri = %s", thread_id, r->uri);
+
+         // check whether we got an exact uri to be tracked
+         if (!value_set_contains(conf->exact_uri_set, r->uri))
+         {
+            // check whether we got a starts with uri to be tracked
+            if (const char *uri_starts_with = value_set_starts_with(conf->starts_with_uri_set, r->uri);
+               !uri_starts_with)
+            {
+               // check whether we got a regex uri to be tracked
+               if (const char *uri_matched = search_regex_table(r->uri, conf->uri_table);
+                  !uri_matched)
+               {
+                  if (APLOG_R_IS_LEVEL(r, request_log_level))
+                  {
+                     ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] neither exact uri nor starts with uri nor regex uri is matched against the current uri", thread_id);
+                     std::string elapsed { to_string(apr_time_now() - start) };
+                     ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] end (OK) - %s", thread_id, elapsed.c_str());
+                  }
+
+                  return OK;
+               }
+               else
+               {
+                  if (APLOG_R_IS_LEVEL(r, request_log_level))
+                     ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] matched regex uri = %s", thread_id, uri_matched);
+
+                  apr_table_setn(r->notes, "wt_tracking_type", "URI PATTERN");
+               }
+            }
+            else
+            {
+               if (APLOG_R_IS_LEVEL(r, request_log_level))
+                  ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] matched starts with uri = %s", thread_id, uri_starts_with);
+
+               apr_table_setn(r->notes, "wt_tracking_type", "URI START");
+            }
+         }
+         else
+         {
+            if (APLOG_R_IS_LEVEL(r, request_log_level))
+               ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] matched exact uri = %s", thread_id, r->uri);
+
+            apr_table_setn(r->notes, "wt_tracking_type", "URI EXACT");
+         }
       }
 
       // check whether we got an exact uri to be excluded
@@ -1716,6 +1741,11 @@ try {
          // release all locks
          APR_ANYLOCK_UNLOCK(&conf->record_thread_mutex);
 
+         // read tracking type
+         const char *tracking_type = apr_table_get(r->notes, "wt_tracking_type");
+         if (!tracking_type) tracking_type = "-";
+         apr_table_unset(r->notes, "wt_tracking_type");
+
          // timestamp
          auto write_end = apr_time_now();
          module_overhead_for_current_request += write_end - start;
@@ -1727,8 +1757,8 @@ try {
             {
                std::string elapsed_t { to_string(module_overhead_for_current_request) };
                std::string elapsed_w { to_string(write_end - write_start) };
-               ap_log_error(APLOG_MARK, APLOG_INFO, 0, r->server, "[WT-METRICS: %s | %s | %s | %d | %s | %s | %s | %s | %s | %s | %s]", 
-                                                                  uuid, appid, r->uri, r->status, elapsed.c_str(), elapsed_t.c_str(), 
+               ap_log_error(APLOG_MARK, APLOG_INFO, 0, r->server, "[WT-METRICS: %s | %s | %s | %s | %d | %s | %s | %s | %s | %s | %s | %s]", 
+                                                                  uuid, appid, r->uri, tracking_type, r->status, elapsed.c_str(), elapsed_t.c_str(), 
                                                                   (has_request_body ? "REQUEST" : "NO"), (has_response_body ? "RESPONSE" : "NO"), 
                                                                   format_bytes(record_data.length()).c_str(), elapsed_w.c_str(), current_file);
             }
@@ -1742,8 +1772,8 @@ try {
             {
                std::string elapsed_t { to_string(module_overhead_for_current_request) };
                std::string elapsed_w { to_string(write_end - write_start) };
-               ap_log_error(APLOG_MARK, APLOG_INFO, 0, r->server, "[WT-METRICS: %s | %s | %s | %d | %s | %s | %s | %s | KO | %s | %s]", 
-                                                                  uuid, appid, r->uri, r->status, elapsed.c_str(), elapsed_t.c_str(), 
+               ap_log_error(APLOG_MARK, APLOG_INFO, 0, r->server, "[WT-METRICS: %s | %s | %s | %s | %d | %s | %s | %s | %s | KO | %s | %s]", 
+                                                                  uuid, appid, r->uri, tracking_type, r->status, elapsed.c_str(), elapsed_t.c_str(), 
                                                                   (has_request_body ? "REQUEST" : "NO"), (has_response_body ? "RESPONSE" : "NO"), 
                                                                   elapsed_w.c_str(), current_file);
             }

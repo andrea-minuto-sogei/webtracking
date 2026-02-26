@@ -103,6 +103,8 @@ The module supports over **30 directives**. Here are some key ones:
 
 | Directive | Type | Example |
 |----------|------|---------|
+| `WebTrackingURLPattern` | Regex for full URLs | `https://www\.mycorp\.com/myroot/home` |
+| `WebTrackingURI` | Regeg for URIs | `(private\|public)/myroot/home` |
 | `WebTrackingExactURI` | Exact URI match | `/myroot/home` |
 | `WebTrackingStartsWithURI` | URI prefix match | `/mycontext/` |
 | `WebTrackingExcludeExactURI` | Disable for exact URI | `/private/` |
@@ -159,6 +161,8 @@ WebTrackingApplicationIdFromHeader application-id
 WebTrackingApplicationId / WEBTRACKING
 
 # URI Filters
+WebTrackingURLPattern https://www\.mycorp\.com/myroot/home
+WebTrackingURI (private\|public)/myroot/home
 WebTrackingExactURI /wlptest/snoop
 WebTrackingStartsWithURI /mycontext/
 WebTrackingExcludeExactURI /mycontext/login
@@ -229,13 +233,13 @@ If `LogLevel` is set to `info` or higher, the module writes a **metrics record**
 #### 📋 Metrics Format
 
 ```
-[WT-METRICS: <uuid> | <appid> | <uri> | <status code> |<response time> | <module overhead for request> | <if request body is present>REQUEST<else>NO | <if response body is present>RESPONSE<else>NO | <if the record is successfully written to file>#formatted written-bytes<else>KO | <elapsed time to write to file> | <log file name>]
+[WT-METRICS: <uuid> | <appid> | <uri> | <tracking type> | <status code> | <response time> | <module overhead for request> | <if request body is present>REQUEST<else>NO | <if response body is present>RESPONSE<else>NO | <if the record is successfully written to file>#formatted written-bytes<else>KO | <elapsed time to write to file> | <log file name>]
 ```
 
 #### 🧾 Sample Log Entry
 
 ```
-[Wed Feb 05 17:36:50.248970 2025] [web_tracking:info] [pid 3819381:tid 140265348957952] [WT-METRICS: webtracking.server.local:Z6OToQuMcAc4W-gG8aTQ9wAAAeE | APP_23| /private/getuser | 200 | 1.295 ms | 934 us | NO | RESPONSE| 7.815 KB | 57 us | webtracking.3819381.9.log]
+[Wed Feb 05 17:36:50.248970 2025] [web_tracking:info] [pid 3819381:tid 140265348957952] [WT-METRICS: webtracking.server.local:Z6OToQuMcAc4W-gG8aTQ9wAAAeE | APP_23| /private/getuser | URI START | 200 | 1.295 ms | 934 us | NO | RESPONSE| 7.815 KB | 57 us | webtracking.3819381.9.log]
 
 ```
 

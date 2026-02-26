@@ -68,6 +68,7 @@ struct wt_config_s
   enum e_body_type request_body_type;
   enum e_body_type response_body_type;
 
+  regex_table_t *url_pattern_table;
   regex_table_t *uri_table;
   regex_table_t *exclude_ip_table;
   regex_table_t *exclude_uri_table;

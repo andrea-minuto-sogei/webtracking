@@ -2,6 +2,9 @@
 
 /*
  * VERSION       DATE        DESCRIPTION
+ * 2026.2.26.1  2026-02-26   Add directive WebTrackingURLPattern
+ *                           Add tracking type to the WT-METRICS record
+ *                           Move to GNU Compiler Collection 15.1.1
  * 2025.5.27.1  2025-05-27   Fix include header files syntax
  *                           Add response elapsed time and log file name in metrics records
  *                           Fix log record length in metrics to be formatted (base 1024) 
@@ -193,7 +196,7 @@ APLOG_USE_MODULE(web_tracking);
 #endif
 
 // version
-const char *version = "Web Tracking Apache Module 2025.5.27.1 (C17/C++23)";
+const char *version = "Web Tracking Apache Module 2026.2.26.1 (C17/C++23)";
 
 wt_counter_t *wt_counter = 0;
 static apr_shm_t *shm_counter = 0;
@@ -220,7 +223,7 @@ static void *create_server_config(apr_pool_t *p, server_rec *s)
    conf->record_minutes = 0;
    conf->log_enabled = 0;
 
-   conf->uri_table = conf->exclude_ip_table = conf->exclude_uri_table = conf->trace_uri_table = 0;
+   conf->url_pattern_table = conf->uri_table = conf->exclude_ip_table = conf->exclude_uri_table = conf->trace_uri_table = 0;
    conf->exclude_uri_body_table = conf->exclude_uri_request_body_table = conf->exclude_uri_response_body_table = 0;
    conf->host_table = conf->content_table = 0;
 
@@ -416,6 +419,29 @@ static const char *wt_tracking_print_envvar(cmd_parms *cmd, void *dummy, const c
    wt_config_t *conf = ap_get_module_config(cmd->server->module_config, &web_tracking_module);
 
    value_set_add(conf->envvar_set, envvar);
+
+   return OK;
+}
+
+static const char *wt_tracking_url_pattern(cmd_parms *cmd, void *dummy, const char *url_pcre)
+{
+   wt_config_t *conf = ap_get_module_config(cmd->server->module_config, &web_tracking_module);
+
+   ap_regex_t *regex = apr_pcalloc(cmd->pool, sizeof(ap_regex_t));
+   int ret = ap_regcomp(regex, url_pcre, AP_REG_EXTENDED);
+   if (ret != 0)
+   {
+      char buffer[512 + 1];
+      strcpy(buffer, "ERROR: Web Tracking Apache Module: Invalid URL PCRE \"");
+      strcat(buffer, url_pcre);
+      strcat(buffer, "\" (Reason: ");
+      ap_regerror(ret, regex, buffer + strlen(buffer), 512 - strlen(buffer));
+      ap_regfree(regex);
+      strcat(buffer, ")");
+      return strdup(buffer);
+   }
+
+   conf->url_pattern_table = add_regex(cmd->pool, conf->url_pattern_table, regex, url_pcre);
 
    return OK;
 }
@@ -1035,6 +1061,7 @@ static int post_config(apr_pool_t *pconf, apr_pool_t *plog, apr_pool_t *ptemp, s
       if (conf->ssl_indicator && APLOG_IS_LEVEL(s, APLOG_INFO))
          ap_log_error(APLOG_MARK, APLOG_INFO, 0, s, "web_tracking_module: [%d] ssl_indicator = %s", pid, conf->ssl_indicator);
       
+      print_regex_table(s, conf->url_pattern_table, apr_psprintf(ptemp, "web_tracking_module: [%d] URL", pid));
       print_value_set(s, conf->exact_host_set, apr_psprintf(ptemp, "web_tracking_module: [%d] Host", pid));
       print_regex_table(s, conf->host_table, apr_psprintf(ptemp, "web_tracking_module: [%d] Host", pid));
       print_value_set(s, conf->exact_uri_set, apr_psprintf(ptemp, "web_tracking_module: [%d] Exact URI", pid));
@@ -1072,20 +1099,20 @@ static int post_config(apr_pool_t *pconf, apr_pool_t *plog, apr_pool_t *ptemp, s
 
    if (!conf->trace_uri_table)
    {
-      if (!value_set_size(conf->exact_host_set) && !conf->host_table)
+      if (!value_set_size(conf->exact_host_set) && !conf->host_table && !conf->url_pattern_table)
       {
          if (pconf && APLOG_IS_LEVEL(s, APLOG_WARNING))
-            ap_log_error(APLOG_MARK, APLOG_WARNING, 0, s, "WARNING: Web Tracking Apache Module: Not found neither any directive WebTrackingExactHost nor any directive WebTrackingHost, so the tracking is disabled for all the requests");
+            ap_log_error(APLOG_MARK, APLOG_WARNING, 0, s, "WARNING: Web Tracking Apache Module: Not found any directive WebTrackingURLPattern, WebTrackingExactHost, or WebTrackingHost; so the tracking is disabled for all the requests");
 
-         printf("WARNING: Web Tracking Apache Module: Not found neither any directive WebTrackingExactHost nor any directive WebTrackingHost, so the tracking is disabled for all the requests\n");
+         printf("WARNING: Web Tracking Apache Module: Not found any directive WebTrackingURLPattern, WebTrackingExactHost, or WebTrackingHost; so the tracking is disabled for all the requests\n");
       }
 
       if (!value_set_size(conf->exact_uri_set) && !value_set_size(conf->starts_with_uri_set) && !conf->uri_table)
       {
          if (pconf && APLOG_IS_LEVEL(s, APLOG_WARNING))
-            ap_log_error(APLOG_MARK, APLOG_WARNING, 0, s, "WARNING: Web Tracking Apache Module: Not found neither any directive WebTrackingExactURI nor any directive WebTrackingStartsWithURI nor any directive WebTrackingURI, so the tracking is disabled for all the requests");
+            ap_log_error(APLOG_MARK, APLOG_WARNING, 0, s, "WARNING: Web Tracking Apache Module: Not found any directive WebTrackingURLPattern, WebTrackingExactURI, WebTrackingStartsWithURI, or WebTrackingURI; so the tracking is disabled for all the requests");
 
-         printf("WARNING: Web Tracking Apache Module: Not found neither any directive WebTrackingExactURI nor any directive WebTrackingStartsWithURI nor any directive WebTrackingURI, so the tracking is disabled for all the requests\n");
+         printf("WARNING: Web Tracking Apache Module: Not found any directive WebTrackingURLPattern, WebTrackingExactURI, WebTrackingStartsWithURI, or WebTrackingURI; so the tracking is disabled for all the requests\n");
       }
 
       if (conf->http == 0 && conf->https == 0)
@@ -1340,6 +1367,7 @@ static const command_rec config_cmds[] =
    AP_INIT_ITERATE("WebTrackingDisablingHeader", wt_tracking_disabling_header, NULL, RSRC_CONF, "WebTrackingDisablingHeader {<string>}+"),
    AP_INIT_ITERATE("WebTrackingOutputHeader", wt_tracking_output_header, NULL, RSRC_CONF, "WebTrackingOutputHeader {<string>}+"),
    AP_INIT_ITERATE("WebTrackingPrintEnvVar", wt_tracking_print_envvar, NULL, RSRC_CONF, "WebTrackingPrintEnvVar {<string>}+"),
+   AP_INIT_ITERATE("WebTrackingURLPattern", wt_tracking_url_pattern, NULL, RSRC_CONF, "WebTrackingURLPattern {<PCRE>}+"),
    AP_INIT_ITERATE("WebTrackingURI", wt_tracking_uri, NULL, RSRC_CONF, "WebTrackingURI {<PCRE>}+"),
    AP_INIT_ITERATE("WebTrackingExactURI", wt_tracking_exact_uri, NULL, RSRC_CONF, "WebTrackingExactURI {<string}+"),
    AP_INIT_ITERATE("WebTrackingStartsWithURI", wt_tracking_starts_with_uri, NULL, RSRC_CONF, "WebTrackingStartsWithURI {<string}+"),
