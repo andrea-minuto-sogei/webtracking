@@ -1733,8 +1733,21 @@ try {
       if (apr_status_t rtl = APR_ANYLOCK_LOCK(&conf->record_thread_mutex); 
           rtl == APR_SUCCESS)
       {
-         // write record log data
-         bool is_write_ok = wt_record_write(record_data);
+         // write record log data and cacth the error if it is thrown
+         bool is_write_ok = true;
+         std::string error_message;
+         try 
+         {
+            wt_record_write(record_data);
+         }
+
+         catch (const std::ios_base::failure& fail)
+         {
+            is_write_ok = false;
+            error_message.assign(fail.what());
+         }
+
+         // current file name
          const char *current_file = wt_record_current_name();
          if (!current_file) current_file = "-";
 
@@ -1772,14 +1785,15 @@ try {
             {
                std::string elapsed_t { to_string(module_overhead_for_current_request) };
                std::string elapsed_w { to_string(write_end - write_start) };
-               ap_log_error(APLOG_MARK, APLOG_INFO, 0, r->server, "[WT-METRICS: %s | %s | %s | %s | %d | %s | %s | %s | %s | KO | %s | %s]", 
+               ap_log_error(APLOG_MARK, APLOG_INFO, 0, r->server, "[WT-METRICS: %s | %s | %s | %s | %d | %s | %s | %s | %s | KO (%s) | %s | %s]", 
                                                                   uuid, appid, r->uri, tracking_type, r->status, elapsed.c_str(), elapsed_t.c_str(), 
                                                                   (has_request_body ? "REQUEST" : "NO"), (has_response_body ? "RESPONSE" : "NO"), 
-                                                                  elapsed_w.c_str(), current_file);
+                                                                  error_message.c_str(), elapsed_w.c_str(), current_file);
             }
 
             if (APLOG_IS_LEVEL(r->server, APLOG_ALERT))
-               ap_log_error(APLOG_MARK, APLOG_ALERT, 0, r->server, "ALERT: failed to write to log file record: uuid = %s, bytes to write = %ld", uuid, record_data.length());
+               ap_log_error(APLOG_MARK, APLOG_ALERT, 0, r->server, "ALERT: failed to write to log file record: name = %s, uuid = %s, bytes to write = %ld, error = %s", 
+                  current_file, uuid, record_data.length(), error_message.c_str());
          }
       }
       else

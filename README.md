@@ -233,7 +233,7 @@ If `LogLevel` is set to `info` or higher, the module writes a **metrics record**
 #### 📋 Metrics Format
 
 ```
-[WT-METRICS: <uuid> | <appid> | <uri> | <tracking type> | <status code> | <response time> | <module overhead for request> | <if request body is present>REQUEST<else>NO | <if response body is present>RESPONSE<else>NO | <if the record is successfully written to file>#formatted written-bytes<else>KO | <elapsed time to write to file> | <log file name>]
+[WT-METRICS: <uuid> | <appid> | <uri> | <tracking type> | <status code> | <response time> | <module overhead for request> | <if request body is present>REQUEST<else>NO | <if response body is present>RESPONSE<else>NO | <if the record is successfully written to file>#formatted written-bytes<else>KO (<error>)| <elapsed time to write to file> | <log file name>]
 ```
 
 #### 🧾 Sample Log Entry

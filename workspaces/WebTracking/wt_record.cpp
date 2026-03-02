@@ -186,6 +186,12 @@ class wt_record
          name = std::format("webtracking.{}.{}.log", wt_record::pid, wt_record::sequence++);
          file_path.assign(wt_record::folder).append(1, '/').append(name);
 
+         // set exception that might be thrown
+         out.exceptions(std::ofstream::failbit | std::ofstream::badbit);
+
+         // clear state to avoid problem
+         out.clear();
+
          // open the first file
          out.open(file_path);
 
@@ -202,6 +208,9 @@ class wt_record
          // no active file
          if (!out.is_open()) return;
 
+         // reset exceptions
+         out.exceptions({});
+
          // close open file
          out.flush();
          out.close();
@@ -211,7 +220,8 @@ class wt_record
       }
 
       // write data
-      bool write_data(const std::string &text)
+      // throw a std::ios_base::failure in case of error
+      void write_data(const std::string &text)
       {
          if (out.is_open() && out.good())
          {
@@ -236,7 +246,6 @@ class wt_record
             {
                std::println(out, "{}", text);
                out.flush();
-               return true;
             }
             else
             {
@@ -251,23 +260,10 @@ class wt_record
             // the file is not open yet or the state is not good
 
             // open the new file
-            open_new_file();
-            
-            if (out)
-            {
+               open_new_file();
                std::println(out, "{}", text);
                out.flush();
-               return true;
-            }
-            else
-            {
-               // clear variables
-               return false;
-            }
          }
-
-         // anyway ...
-         return false;
       }
 };
 
@@ -277,7 +273,8 @@ namespace
    wt_record record;
 }
 
-bool wt_record_write(const std::string &text)
+// throw a std::ios_base::failure in case of error
+void wt_record_write(const std::string &text)
 {
    return record.write_data(text);
 }

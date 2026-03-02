@@ -2,6 +2,7 @@
 
 /*
  * VERSION       DATE        DESCRIPTION
+ * 2026.3.2.1   2026-03-02   Fix log file error management
  * 2026.2.26.1  2026-02-26   Add directive WebTrackingURLPattern
  *                           Add tracking type to the WT-METRICS record
  *                           Move to GNU Compiler Collection 15.1.1
@@ -196,7 +197,7 @@ APLOG_USE_MODULE(web_tracking);
 #endif
 
 // version
-const char *version = "Web Tracking Apache Module 2026.2.26.1 (C17/C++23)";
+const char *version = "Web Tracking Apache Module 2026.3.2.1 (C17/C++23)";
 
 wt_counter_t *wt_counter = 0;
 static apr_shm_t *shm_counter = 0;

@@ -15,7 +15,8 @@ void wt_record_release();
 #ifdef __cplusplus
 }
 
-bool wt_record_write(const std::string &text);
+// throw a std::ios_base::failure in case of error
+void wt_record_write(const std::string &text);
 bool is_debug_enabled(const std::string &hostname, const std::string &uri);
 
 #endif
