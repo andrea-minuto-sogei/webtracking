@@ -10,7 +10,7 @@ gcc -std=c++23 -std=c17 -D_LARGEFILE64_SOURCE=1 -L/home/webihs/IHS/lib -shared -
 
 # Creazione archivio binari
 grep -E -o 'Web Tracking Apache Module .*?\)' /home/webihs/workspaces/WebTracking/mod_web_tracking.c > /home/webihs/webtracking/bin/version.txt
-cd && zip -r -FS -dc /prod/tracciamento/archives/webtracking-bin.zip webtracking/bin webtracking/lib webtracking/splunk && cd -
+cd && zip -r -FS -dc /prod/tracciamento/archives/webtracking-bin.zip webtracking/bin webtracking/lib webtracking/splunk webtracking/update webtracking/logs && cd -
 
 # Creazione archivio sorgenti
 cd /prod/tracciamento && zip -r -FS -dc archives/webtracking-src.zip workspaces/WebTracking/ workspaces/Collector/ info && cd -
