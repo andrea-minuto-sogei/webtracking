@@ -2,6 +2,7 @@
 
 /*
  * VERSION       DATE        DESCRIPTION
+ * 2026.3.30.1  2026-03-30   Fix directive parsing
  * 2026.3.2.1   2026-03-02   Fix log file error management
  * 2026.2.26.1  2026-02-26   Add directive WebTrackingURLPattern
  *                           Add tracking type to the WT-METRICS record
@@ -197,7 +198,7 @@ APLOG_USE_MODULE(web_tracking);
 #endif
 
 // version
-const char *version = "Web Tracking Apache Module 2026.3.2.1 (C17/C++23)";
+const char *version = "Web Tracking Apache Module 2026.3.30.1 (C17/C++23)";
 
 wt_counter_t *wt_counter = 0;
 static apr_shm_t *shm_counter = 0;
@@ -312,7 +313,7 @@ static const char *wt_tracking_ssl_indicator(cmd_parms *cmd, void *dummy, const 
    }
    else
    {
-      printf("WARNING: Web Tracking Apache Module: The directive WebTrackingSSLIndicator should be configured once\n");
+      printf("WARNING: Web Tracking Apache Module: The directive WebTrackingSSLIndicator should be configured once");
    }
 
    return OK;
@@ -328,7 +329,7 @@ static const char *wt_tracking_clientip_header(cmd_parms *cmd, void *dummy, cons
    }
    else
    {
-      printf("WARNING: Web Tracking Apache Module: The directive WebTrackingClientIpHeader should be configured once\n");
+      printf("WARNING: Web Tracking Apache Module: The directive WebTrackingClientIpHeader should be configured once");
    }
 
    return OK;
@@ -823,13 +824,13 @@ static const char *wt_application_id(cmd_parms *cmd, void *dummy, const char *ar
    wt_config_t *conf = ap_get_module_config(cmd->server->module_config, &web_tracking_module);
 
    ap_regex_t regex;
-   /* ^"?(\/[\w-\/.]*)"?\s+"?([\w-.]+)"?(?:\s+"?([\w-.]+(?::\d{1,5})?|\*)"?)?$ */
-   ap_regcomp(&regex, "^\"?(\\/[\\w-\\/.]*)\"?\\s+\"?([\\w-.]+)\"?(?:\\s+\"?([\\w-.]+(?::\\d{1,5})?|\\*)\"?)?$", AP_REG_EXTENDED);
+   /* ^"?(\/[\w\-\/.]*)"?\s+"?([\w\-.]+)"?(?:\s+"?([\w\-.]+(?::\d{1,5})?|\*)"?)?$ */
+   ap_regcomp(&regex, "^\"?(\\/[\\w\\-\\/.]*)\"?\\s+\"?([\\w\\-.]+)\"?(?:\\s+\"?([\\w\\-.]+(?::\\d{1,5})?|\\*)\"?)?$", AP_REG_EXTENDED);
    apr_size_t nmatch = 3 + 1;
    ap_regmatch_t *pmatch = apr_pcalloc(cmd->pool, sizeof(ap_regmatch_t) * nmatch);
    int ret = ap_regexec(&regex, args, nmatch, pmatch, 0);
    ap_regfree(&regex);
-   if (ret != 0) return "ERROR: Web Tracking Apache Module: WebTrackingApplicationId directive must follow the pattern <URI> <APPLICATION ID> [<HOST>|*]\n";
+   if (ret != 0) return "ERROR: Web Tracking Apache Module: WebTrackingApplicationId directive must follow the pattern <URI> <APPLICATION ID> [<HOST>|*]";
 
    size_t uri_length = pmatch[1].rm_eo - pmatch[1].rm_so;
    char *uri = apr_pcalloc(cmd->pool, uri_length + 1);
@@ -856,7 +857,7 @@ static const char *wt_application_id(cmd_parms *cmd, void *dummy, const char *ar
    }
    else
    {
-      printf("WARNING: Web Tracking Apache Module: The WebTrackingApplicationId host [%s] and uri [%s] were already defined and the directive will be ignored\n", host, uri);
+      printf("WARNING: Web Tracking Apache Module: The WebTrackingApplicationId host [%s] and uri [%s] were already defined and the directive will be ignored", host, uri);
    }
 
    return OK;
