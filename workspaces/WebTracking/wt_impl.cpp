@@ -762,38 +762,42 @@ extern "C" void initialize_pid_and_regular_expressions(pid_t pid, const wt_confi
    // set pid
    process_id = pid;
 
-   // cookies
-   if (conf->exclude_cookie_set)
+   // initialization is skipped if tracking is disabled
+   if (!conf->disable)
    {
-      t_set_table *local_set = static_cast<t_set_table *>(conf->exclude_cookie_set);
-      for (const std::string &cookie : *local_set)
+      // cookies
+      if (conf->exclude_cookie_set)
       {
-         try { cookies_re.push_back(std::regex { std::format(cookie_pattern, cookie) }); }
-         catch (const std::exception &e) {}
-         try { set_cookies_re.push_back(std::regex { std::format(set_cookie_pattern, cookie) }); }
-         catch (const std::exception &e) {}
+         t_set_table *local_set = static_cast<t_set_table *>(conf->exclude_cookie_set);
+         for (const std::string &cookie : *local_set)
+         {
+            try { cookies_re.push_back(std::regex { std::format(cookie_pattern, cookie) }); }
+            catch (const std::exception &e) {}
+            try { set_cookies_re.push_back(std::regex { std::format(set_cookie_pattern, cookie) }); }
+            catch (const std::exception &e) {}
+         }
       }
-   }
-
-   // parameters
-   if (conf->exclude_parameter_set)
-   {
-      t_set_table *local_set = static_cast<t_set_table *>(conf->exclude_parameter_set);
-      for (const std::string &parameter : *local_set)
-      {
-         try { parameters_re.push_back(std::regex { std::format(parameter_pattern, parameter) }); }
-         catch (const std::exception &e) {}   
-      }
-   }
    
-   // headers
-   if (conf->output_header_set)
-   {
-      t_set_table *local_set = static_cast<t_set_table *>(conf->output_header_set);
-      for (const std::string &header: *local_set)
+      // parameters
+      if (conf->exclude_parameter_set)
       {
-         try { headers_re.push_back(std::regex { std::format(header_pattern, header), std::regex::icase }); }
-         catch (const std::exception &e) {}
+         t_set_table *local_set = static_cast<t_set_table *>(conf->exclude_parameter_set);
+         for (const std::string &parameter : *local_set)
+         {
+            try { parameters_re.push_back(std::regex { std::format(parameter_pattern, parameter) }); }
+            catch (const std::exception &e) {}   
+         }
+      }
+      
+      // headers
+      if (conf->output_header_set)
+      {
+         t_set_table *local_set = static_cast<t_set_table *>(conf->output_header_set);
+         for (const std::string &header: *local_set)
+         {
+            try { headers_re.push_back(std::regex { std::format(header_pattern, header), std::regex::icase }); }
+            catch (const std::exception &e) {}
+         }
       }
    }
 }
@@ -1489,7 +1493,8 @@ catch (const std::exception &err)
 }
 
 extern "C" int log_transaction_impl(request_rec *r)
-try {
+try 
+{
    if (APLOG_R_IS_LEVEL(r, request_log_level))
    {
       ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "log_transaction(): [%ld] start", thread_id);
@@ -1718,6 +1723,70 @@ try {
 
       if (APLOG_R_IS_LEVEL(r, request_log_level))
          ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "log_transaction(): [%ld] record_data length = %lu", thread_id, record_data.length());
+      
+      if (APLOG_R_IS_LEVEL(r, request_log_level))
+         ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "log_transaction(): [%ld] search for output header that can disable the whole tracking", thread_id);
+      
+      for (header_table_t *table = conf->exclude_response_header_table; table; table = table->next)
+      {
+         if (APLOG_R_IS_LEVEL(r, request_log_level))
+         ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "log_transaction(): [%ld] header name: %s, pattern: %s", thread_id, table->name, table->pattern);
+         
+         if (const char *value = apr_table_get(r->headers_out, table->name);
+            value)
+         {
+            if (APLOG_R_IS_LEVEL(r, request_log_level))
+               ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "log_transaction(): [%ld] found output header name: %s, value: %s", thread_id, table->name, value);
+            
+            ap_regmatch_t rmatch;
+            int match = ap_regexec(table->regex, value, 1, &rmatch, 0);
+            if (match != AP_REG_NOMATCH)
+            {
+               if (APLOG_R_IS_LEVEL(r, request_log_level))
+                  ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "log_transaction(): [%ld] positive match pattern: %s, value: %s", thread_id, table->pattern, value);
+               
+               // decrement counters
+               apr_atomic_dec32(&conf->requests);
+               if (has_request_body) apr_atomic_dec32(&conf->request_bodies);
+               if (has_response_body) apr_atomic_dec32(&conf->response_bodies);
+               apr_atomic_inc32(&conf->responses);
+               
+               if (wt_counter)
+               {
+                  apr_atomic_dec32(&wt_counter->requests);
+                  if (has_request_body) apr_atomic_dec32(&wt_counter->request_bodies);
+                  if (has_response_body) apr_atomic_dec32(&wt_counter->response_bodies);
+                  apr_atomic_dec32(&wt_counter->responses);
+               }
+
+               if (const char *ce = apr_table_get(r->headers_out, "Content-Encoding");
+                   ce && (!std::strcmp(ce, "deflate") || !std::strcmp(ce, "gzip")))
+               {
+                  apr_atomic_dec32(&conf->response_with_compressed_bodies);
+                  if (wt_counter) apr_atomic_dec32(&wt_counter->response_with_compressed_bodies);
+               }
+               
+               // Exit
+               if (APLOG_R_IS_LEVEL(r, request_log_level))
+               {
+                  std::string elapsed { to_string(apr_time_now() - start) };
+                  ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "log_transaction(): [%ld] end (OK) - %s", thread_id, elapsed.c_str());
+               }
+
+               return OK;
+            }
+            else
+            {
+               if (APLOG_R_IS_LEVEL(r, request_log_level))
+                  ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "log_transaction(): [%ld] negative match pattern: %s, value: %s", thread_id, table->pattern, value);
+            }
+         }
+         else
+         {
+            if (APLOG_R_IS_LEVEL(r, request_log_level))
+               ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "log_transaction(): [%ld] not found output header name: %s", thread_id, table->name);
+         }
+      }
 
       // lock types
       auto apr_anylock_none = apr_anylock_t::apr_anylock_none;               /* None */
@@ -2694,7 +2763,7 @@ try {
                   
                   // increment counter
                   apr_atomic_inc32(&ctx->conf->response_with_compressed_bodies);
-                  if (wt_counter) apr_atomic_inc32(&wt_counter->response_inflated_bodies);
+                  if (wt_counter) apr_atomic_inc32(&wt_counter->response_with_compressed_bodies);
 
                   if (ctx->conf->inflate_response == 1)
                   {

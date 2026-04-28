@@ -2,6 +2,8 @@
 
 /*
  * VERSION       DATE        DESCRIPTION
+ * 2026.4.28.1  2026-04-28   Add directive WebTrackingExcludeResponseHeader
+ *                           Allow statistical mode only (WebTrackingDisable On)
  * 2026.3.30.1  2026-03-30   Fix directive parsing
  * 2026.3.2.1   2026-03-02   Fix log file error management
  * 2026.2.26.1  2026-02-26   Add directive WebTrackingURLPattern
@@ -198,7 +200,7 @@ APLOG_USE_MODULE(web_tracking);
 #endif
 
 // version
-const char *version = "Web Tracking Apache Module 2026.3.30.1 (C17/C++23)";
+const char *version = "Web Tracking Apache Module 2026.4.28.1 (C17/C++23)";
 
 wt_counter_t *wt_counter = 0;
 static apr_shm_t *shm_counter = 0;
@@ -227,6 +229,7 @@ static void *create_server_config(apr_pool_t *p, server_rec *s)
 
    conf->url_pattern_table = conf->uri_table = conf->exclude_ip_table = conf->exclude_uri_table = conf->trace_uri_table = 0;
    conf->exclude_uri_body_table = conf->exclude_uri_request_body_table = conf->exclude_uri_response_body_table = 0;
+   conf->exclude_response_header_table = 0;
    conf->host_table = conf->content_table = 0;
 
    conf->appid_table = 0;
@@ -674,6 +677,29 @@ static const char *wt_tracking_exclude_ip(cmd_parms *cmd, void *dummy, const cha
    return OK;
 }
 
+static const char *wt_tracking_exclude_response_header(cmd_parms *cmd, void *dummy, const char *name, const char *pattern)
+{
+   wt_config_t *conf = ap_get_module_config(cmd->server->module_config, &web_tracking_module);
+
+   ap_regex_t *regex = apr_pcalloc(cmd->pool, sizeof(ap_regex_t));
+   int ret = ap_regcomp(regex, pattern, AP_REG_EXTENDED);
+   if (ret != 0)
+   {
+      char buffer[512 + 1];
+      strcpy(buffer, "ERROR: Web Tracking Apache Module: Invalid Exclude Response Header PCRE \"");
+      strcat(buffer, pattern);
+      strcat(buffer, "\" (Reason: ");
+      ap_regerror(ret, regex, buffer + strlen(buffer), 512 - strlen(buffer));
+      ap_regfree(regex);
+      strcat(buffer, ")");
+      return strdup(buffer);
+   }
+
+   conf->exclude_response_header_table = add_header_entry(cmd->pool, conf->exclude_response_header_table, name, pattern, regex);
+
+   return OK;
+}
+
 static const char *wt_tracking_exclude_header(cmd_parms *cmd, void *dummy, const char *header)
 {
    wt_config_t *conf = ap_get_module_config(cmd->server->module_config, &web_tracking_module);
@@ -899,39 +925,42 @@ static apr_status_t child_exit(void *data)
    value_set_delete(conf->exclude_starts_with_uri_set);
    value_set_delete(conf->exact_host_set);
 
-   apr_status_t rtl = APR_ANYLOCK_LOCK(&conf->record_thread_mutex);
-   if (rtl == APR_SUCCESS)
+   // initialization is skipped if tracking is disabled
+   if (!conf->disable)
    {
-      // release wt_record instance
-      if (conf->log_enabled)
+      apr_status_t rtl = APR_ANYLOCK_LOCK(&conf->record_thread_mutex);
+      if (rtl == APR_SUCCESS)
       {
-         if (APLOG_IS_LEVEL(s, APLOG_DEBUG)) 
-            ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, s, "child_exit(): [%d] launch wt_record_release() to move current record file", pid);
+         // release wt_record instance
+         if (conf->log_enabled)
+         {
+            if (APLOG_IS_LEVEL(s, APLOG_DEBUG)) 
+               ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, s, "child_exit(): [%d] launch wt_record_release() to move current record file", pid);
+               
+            wt_record_release();
+            conf->log_enabled = 0;
+         }
+   
+         // release thread mutex
+         if (conf->record_thread_mutex.lock.tm != NULL)
+         {
+            apr_thread_mutex_destroy(conf->record_thread_mutex.lock.tm);
+            conf->record_thread_mutex.lock.tm = NULL;
             
-         wt_record_release();
-         conf->log_enabled = 0;
-      }
-
-      // release thread mutex
-      if (conf->record_thread_mutex.lock.tm != NULL)
-      {
-         apr_thread_mutex_destroy(conf->record_thread_mutex.lock.tm);
-         conf->record_thread_mutex.lock.tm = NULL;
+            if (APLOG_IS_LEVEL(s, APLOG_DEBUG)) ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, s, "child_exit(): [%d] Record thread mutex released", pid);
+         }
          
-         if (APLOG_IS_LEVEL(s, APLOG_DEBUG)) ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, s, "child_exit(): [%d] Record thread mutex released", pid);
+         if (APLOG_IS_LEVEL(s, APLOG_ALERT)) ap_log_error(APLOG_MARK, APLOG_ALERT, 0, s, "web_tracking_module: terminated child cleanup routine [%d]", pid);
       }
-      
-      if (APLOG_IS_LEVEL(s, APLOG_ALERT)) ap_log_error(APLOG_MARK, APLOG_ALERT, 0, s, "web_tracking_module: terminated child cleanup routine [%d]", pid);
+      else
+      {
+         char error[1024];
+         apr_strerror(rtl, error, 1024);
+         
+         if (APLOG_IS_LEVEL(s, APLOG_ALERT))
+            ap_log_error(APLOG_MARK, APLOG_ALERT, 0, s, "web_tracking_module: child cleanup routine failed to acquire a cross-thread lock (err: %s) [%d]", error, pid);
+      }
    }
-   else
-   {
-      char error[1024];
-      apr_strerror(rtl, error, 1024);
-      
-      if (APLOG_IS_LEVEL(s, APLOG_ALERT))
-         ap_log_error(APLOG_MARK, APLOG_ALERT, 0, s, "web_tracking_module: child cleanup routine failed to acquire a cross-thread lock (err: %s) [%d]", error, pid);
-   }
-
    
    if (APLOG_IS_LEVEL(s, APLOG_DEBUG)) ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, s, "child_exit(): [%d] end", pid);
 
@@ -945,23 +974,27 @@ static void child_init(apr_pool_t *pchild, server_rec *s)
    // retrieve config instance
    wt_config_t *conf = ap_get_module_config(s->module_config, &web_tracking_module);
 
-   // thread mutex initialization
-   conf->record_thread_mutex.type = apr_anylock_threadmutex;
-   apr_status_t mtc = apr_thread_mutex_create(&conf->record_thread_mutex.lock.tm, APR_THREAD_MUTEX_DEFAULT, pchild);
-   if (mtc == APR_SUCCESS)
+   // initialization is skipped if tracking is disabled
+   if (!conf->disable)
    {
-      if (APLOG_IS_LEVEL(s, APLOG_INFO)) ap_log_error(APLOG_MARK, APLOG_INFO, 0, s, "[%d] Record thread mutex successfully initialized", pid);
-   }
-   else
-   {
-      if (APLOG_IS_LEVEL(s, APLOG_ALERT)) ap_log_error(APLOG_MARK, APLOG_ALERT, 0, s, "[%d] Record thread mutex NOT initialized (error %d)", pid, mtc);
+      // thread mutex initialization
+      conf->record_thread_mutex.type = apr_anylock_threadmutex;
+      apr_status_t mtc = apr_thread_mutex_create(&conf->record_thread_mutex.lock.tm, APR_THREAD_MUTEX_DEFAULT, pchild);
+      if (mtc == APR_SUCCESS)
+      {
+         if (APLOG_IS_LEVEL(s, APLOG_INFO)) ap_log_error(APLOG_MARK, APLOG_INFO, 0, s, "[%d] Record thread mutex successfully initialized", pid);
+      }
+      else
+      {
+         if (APLOG_IS_LEVEL(s, APLOG_ALERT)) ap_log_error(APLOG_MARK, APLOG_ALERT, 0, s, "[%d] Record thread mutex NOT initialized (error %d)", pid, mtc);
 
-      conf->record_thread_mutex.type = apr_anylock_none;
-   }
+         conf->record_thread_mutex.type = apr_anylock_none;
+      }
 
-   // wt_record
-   conf->log_enabled = wt_record_init(pid, conf->record_folder, conf->record_archive_folder, conf->record_minutes);
-   if (APLOG_IS_LEVEL(s, APLOG_DEBUG)) ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, s, "child_init(): [%d] record folders, first file, and hot debug initialized", pid);
+      // wt_record
+      conf->log_enabled = wt_record_init(pid, conf->record_folder, conf->record_archive_folder, conf->record_minutes);
+      if (APLOG_IS_LEVEL(s, APLOG_DEBUG)) ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, s, "child_init(): [%d] record folders, first file, and hot debug initialized", pid);
+   }
 
    // initialize regular epressions
    initialize_pid_and_regular_expressions(pid, conf);
@@ -1016,7 +1049,7 @@ static int post_config(apr_pool_t *pconf, apr_pool_t *plog, apr_pool_t *ptemp, s
          apr_atomic_set32(&wt_counter->responses, 0);
          apr_atomic_set32(&wt_counter->request_bodies, 0);
          apr_atomic_set32(&wt_counter->response_bodies, 0);
-         apr_atomic_set32(&wt_counter->response_inflated_bodies, 0);
+         apr_atomic_set32(&wt_counter->response_with_compressed_bodies, 0);
          apr_atomic_set32(&wt_counter->total_requests, 0);
          wt_counter->pid = pid;
 
@@ -1073,6 +1106,7 @@ static int post_config(apr_pool_t *pconf, apr_pool_t *plog, apr_pool_t *ptemp, s
       print_value_set(s, conf->exclude_starts_with_uri_set, apr_psprintf(ptemp, "web_tracking_module: [%d] Exclude Starts With URI", pid));
       print_regex_table(s, conf->exclude_uri_table, apr_psprintf(ptemp, "web_tracking_module: [%d] Exclude URI", pid));
       print_regex_table(s, conf->exclude_ip_table, apr_psprintf(ptemp, "web_tracking_module: [%d] Exclude IP", pid));
+      print_header_table(s, conf->exclude_response_header_table, apr_psprintf(ptemp, "web_tracking_module: [%d] Exclude Response Header", pid));
       print_regex_table(s, conf->exclude_uri_body_table, apr_psprintf(ptemp, "web_tracking_module: [%d] Exclude URI Body", pid));
       print_regex_table(s, conf->exclude_uri_request_body_table, apr_psprintf(ptemp, "web_tracking_module: [%d] Exclude URI Request Body", pid));
       print_regex_table(s, conf->exclude_uri_response_body_table, apr_psprintf(ptemp, "web_tracking_module: [%d] Exclude URI Response Body", pid));
@@ -1315,7 +1349,7 @@ static int wt_status_hook(request_rec *r, int flags)
          snprintf(formatted, 32, "%'u", apr_atomic_read32(&wt_counter->request_bodies));
          ap_rprintf(r, "            <dt>Request Bodies: <b>%s</b></dt>\n", formatted);
          apr_uint32_t responses = apr_atomic_read32(&wt_counter->response_bodies);
-         apr_uint32_t compressed = apr_atomic_read32(&wt_counter->response_inflated_bodies);
+         apr_uint32_t compressed = apr_atomic_read32(&wt_counter->response_with_compressed_bodies);
          if (responses > 0) compressed = compressed * 100 / responses;
          else compressed = 0;
          snprintf(formatted, 32, "%'u (%u%% compressed)", responses, compressed);
@@ -1381,6 +1415,7 @@ static const command_rec config_cmds[] =
    AP_INIT_ITERATE("WebTrackingExcludeURIResponseBody", wt_tracking_exclude_uri_response_body, NULL, RSRC_CONF, "WebTrackingExcludeURIResponseBody {<PCRE>}+"),
    AP_INIT_ITERATE("WebTrackingTraceURI", wt_tracking_trace_uri, NULL, RSRC_CONF, "WebTrackingTraceURI {<PCRE>}+"),
    AP_INIT_ITERATE("WebTrackingExcludeIP", wt_tracking_exclude_ip, NULL, RSRC_CONF, "WebTrackingExcludeIP {<PCRE>}+"),
+   AP_INIT_TAKE2("WebTrackingExcludeResponseHeader", wt_tracking_exclude_response_header, NULL, RSRC_CONF, "WebTrackingExcludeResponseHeader <string> <PCRE>"),
    AP_INIT_ITERATE("WebTrackingExcludeHeader", wt_tracking_exclude_header, NULL, RSRC_CONF, "WebTrackingExcludeHeader {<string>}+"),
    AP_INIT_ITERATE("WebTrackingExcludeHeaderValue", wt_tracking_exclude_header_value, NULL, RSRC_CONF, "WebTrackingExcludeHeaderValue {<string>}+"),
    AP_INIT_ITERATE("WebTrackingExcludeCookie", wt_tracking_exclude_cookie, NULL, RSRC_CONF, "WebTrackingExcludeCookie {<string>}+"),
@@ -1565,5 +1600,40 @@ static void print_value_set(server_rec *s, void *set, const char *prefix)
             value_set_delete_array(array);
          }
       }
+   }
+}
+
+static header_table_t *add_header_entry(apr_pool_t *pool, header_table_t *table, const char *name, const char *pattern, ap_regex_t *regex)
+{
+   header_table_t *ret = table;
+
+   if (table != 0)
+   {
+      if (!strcmp(table->name, name) && !strcasecmp(table->pattern, pattern)) return table;
+
+      while (table->next != 0) table = table->next;
+      table->next = apr_pcalloc(pool, sizeof(uri_table_t));
+      table = table->next;
+   }
+   else
+   {
+      ret = table = apr_pcalloc(pool, sizeof(header_table_t));
+   }
+
+   table->name = name;
+   table->pattern = pattern;
+   table->regex = regex;
+   table->next = 0;
+
+   return ret;
+}
+
+static void print_header_table(server_rec *s, header_table_t *table, const char *prefix)
+{
+   while (table != 0)
+   {
+      if (APLOG_IS_LEVEL(s, APLOG_INFO)) ap_log_error(APLOG_MARK, APLOG_INFO, 0, s, "%s [name: %s, pattern: %s]", prefix, table->name, table->pattern);
+
+      table = table->next;
    }
 }

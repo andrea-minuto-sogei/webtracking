@@ -16,13 +16,13 @@
 # 7. Restarts all WebTracking services.
 
 # How to run:
-# curl http://mdwservizio01.srv.sogei.it/WebTracking/manageWebTracking.sh -o manageWebTracking.sh
-# sh manageWebTracking.sh --all | tee manageWebTracking.log
-# sh manageWebTracking.sh --splunkforwarder --webtracking --template | tee manageWebTracking.log
-# sh manageWebTracking.sh --setup | tee manageWebTracking.log
-# sh manageWebTracking.sh --help
-# sh manageWebTracking.sh --version
-# rm manageWebTracking.sh
+# curl http://mdwservizio01.srv.sogei.it/WebTracking/manage.sh -o manage.sh
+# sh manage.sh --all | tee manage.log
+# sh manage.sh --splunkforwarder --webtracking --template | tee manage.log
+# sh manage.sh --setup | tee manage.log
+# sh manage.sh --help
+# sh manage.sh --version
+# rm manage.sh
 
 # Note
 # If no apachectl* file is built using the apachectl_template, 
@@ -30,7 +30,7 @@
 # IHS_CONFIGURATION_FILE=/prod/IBM/HTTPServer/conf.d/httpd_<service>.conf
 
 # Version
-VERSION=2026.3.23.2
+VERSION=2026.4.23.1
 
 # Default behavior: if no options, print help and exit
 UPDATE_SPLUNK=false
