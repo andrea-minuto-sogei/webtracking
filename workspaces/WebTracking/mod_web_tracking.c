@@ -2,6 +2,9 @@
 
 /*
  * VERSION       DATE        DESCRIPTION
+ * 2026.5.28.1  2026-05-28   Fix record files and folders management
+ *                           Remove non-root user constraint
+ *                           Add SELinux support
  * 2026.4.28.1  2026-04-28   Add directive WebTrackingExcludeResponseHeader
  *                           Allow statistical mode only (WebTrackingDisable On)
  * 2026.3.30.1  2026-03-30   Fix directive parsing
@@ -180,11 +183,15 @@
 #include <ctype.h>
 #include <locale.h>
 #include <sys/syscall.h>
+#include <sys/stat.h>
+
+/* C Header Files */
+#include <stdbool.h>
 
 /* C++ header files */
 #include "wt_impl.hpp"
 
-/* External functions, linked correctly but not declared by header files */
+/* External functions, linked correctly but not declared by any header files */
 extern char *strdup (const char *__s);
 extern int gethostname(char *name, size_t len);
 extern long syscall(long number, ...);
@@ -200,7 +207,7 @@ APLOG_USE_MODULE(web_tracking);
 #endif
 
 // version
-const char *version = "Web Tracking Apache Module 2026.4.28.1 (C17/C++23)";
+const char *version = "Web Tracking Apache Module 2026.5.28.1 (C17/C++23)";
 
 wt_counter_t *wt_counter = 0;
 static apr_shm_t *shm_counter = 0;
@@ -993,7 +1000,11 @@ static void child_init(apr_pool_t *pchild, server_rec *s)
 
       // wt_record
       conf->log_enabled = wt_record_init(pid, conf->record_folder, conf->record_archive_folder, conf->record_minutes);
-      if (APLOG_IS_LEVEL(s, APLOG_DEBUG)) ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, s, "child_init(): [%d] record folders, first file, and hot debug initialized", pid);
+      if (APLOG_IS_LEVEL(s, APLOG_DEBUG))
+      {
+         if (conf->log_enabled) ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, s, "child_init(): [%d] record folders, first file, and hot debug successfully initialized", pid);
+         else ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, s, "child_init(): [%d] record folders, first file, and hot debug NOT successfully initialized", pid);
+      }
    }
 
    // initialize regular epressions
@@ -1038,9 +1049,23 @@ static int post_config(apr_pool_t *pconf, apr_pool_t *plog, apr_pool_t *ptemp, s
 
    if (is_main_process)
    {
-      const char *filename = apr_psprintf(ptemp, "logs/.shm_%d", pid);
-      const char *shm_filename = ap_server_root_relative(pconf, filename);
+      // Check whether the standard folder /dev/shm exist
+      struct stat sb;
+      bool exists_dev_shm = stat("/dev/shm", &sb) == 0 && S_ISDIR(sb.st_mode);
 
+      // Build shared memory file name
+      const char *shm_filename = 0;
+      if (exists_dev_shm)
+      {
+         shm_filename = apr_psprintf(ptemp, "/dev/shm/.shm_wt_tracking_%d", pid);
+      }
+      else
+      {
+         const char *filename = apr_psprintf(ptemp, "logs/.shm_wt_tracking_%d", pid);
+         shm_filename = ap_server_root_relative(pconf, filename);
+      }
+
+      // Create shared memory and attach to a file
       if (apr_shm_create(&shm_counter, sizeof(wt_counter_t), shm_filename, pconf) == APR_SUCCESS ||
          apr_shm_attach(&shm_counter, shm_filename, pconf) == APR_SUCCESS)
       {
@@ -1163,9 +1188,9 @@ static int post_config(apr_pool_t *pconf, apr_pool_t *plog, apr_pool_t *ptemp, s
    if (!wt_record_check_filesystem(conf->record_folder, conf->record_archive_folder))
    {
       if (pconf && APLOG_IS_LEVEL(s, APLOG_WARNING))
-            ap_log_error(APLOG_MARK, APLOG_WARNING, 0, s, "WARNING: WebTrackingRecordFolder points to a filesystem different than WebTrackingRecordArchive, so the record files won't be moved");
+            ap_log_error(APLOG_MARK, APLOG_WARNING, 0, s, "WARNING: WebTrackingRecordFolder or WebTrackingRecordArchive don't exists or they point to two different filesystems");
 
-         printf("WARNING: WebTrackingRecordFolder points to a filesystem different than that pointed by WebTrackingRecordArchive, so the record files won't be moved\n");
+         printf("WARNING: WebTrackingRecordFolder or WebTrackingRecordArchive don't exists or they point to two different filesystems\n");
    }
 
    // apachectl -t

@@ -30,7 +30,7 @@
 # IHS_CONFIGURATION_FILE=/prod/IBM/HTTPServer/conf.d/httpd_<service>.conf
 
 # Version
-VERSION=2026.4.23.1
+VERSION=2026.5.14.1
 
 # Default behavior: if no options, print help and exit
 UPDATE_SPLUNK=false
@@ -158,18 +158,58 @@ then
   exit 1
 fi
 
+if [[ $SETUP == false ]]
+then
+  log "WebTracking Update Script Version: $VERSION"
+else
+  log "WebTracking Setup Script Version: $VERSION"
+fi
+
+if [[ "$UPDATE_TEMPLATE" == true || "$SETUP" == true ]]
+then
+  log "Downloading apachectl_template"
+  curl "$DOWNLOAD_URL/apachectl_template" -o "apachectl_template"
+fi
+
+# Update apachectl files in IHS_BIN_DIR
+if [[ ("$UPDATE_TEMPLATE" == true || "$SETUP" == true) && -f "apachectl_template" ]]
+then
+  log "Updating apachectl files"
+  for apachectl_file in "$IHS_BIN_DIR"/apachectl*
+  do
+    if [[ -f "$apachectl_file" ]] && grep -q "^IHS_CONFIGURATION_FILE" "$apachectl_file"
+    then
+      log "Updating $apachectl_file"
+
+      # Store the line beginning with IHS_CONFIGURATION_FILE
+      ACTUAL_CONF_FILE=$(grep "^IHS_CONFIGURATION_FILE" "$apachectl_file")
+      
+      # Replace the file with the content of apachectl_template
+      cp -p "apachectl_template" "$apachectl_file"
+
+      # Set execute permissions         
+      chmod +x "$apachectl_file"
+      
+      # Add back the original IHS_CONFIGURATION_FILE line
+      sed -i "/^IHS_CONFIGURATION_FILE/c\\$ACTUAL_CONF_FILE" "$apachectl_file"
+
+      # version
+      "$apachectl_file" --version | head -1 || true
+
+      # status
+      "$apachectl_file" status || true
+    fi
+  done
+  
+  # Remove the apachectl_template
+  rm -f "apachectl_template"
+fi
+
 # Check whether exists the folder /webtracking
 if [[ -d "$WEBTRACKING_HOME" ]]
 then
-  if [[ $SETUP == false ]]
-  then
-    log "WebTracking Update Script Version: $VERSION"
-  else
-    log "WebTracking Setup Script Version: $VERSION"
-    
-    # Create necessary directory
-    mkdir -p "$IHS_CONF_DIR"
-  fi
+  # Create necessary directory
+  mkdir -p "$IHS_CONF_DIR"
   
   # Create update directory if it doesn't exist
   mkdir -p "$WEBTRACKING_HOME/update"
@@ -185,46 +225,6 @@ then
   then
     log "Downloading webtracking binaries"
     curl "$WEBTRACKING_BIN_URL" -o "$WEBTRACKING_HOME/update/webtracking-bin.zip"
-  fi
-  
-  if [[ "$UPDATE_TEMPLATE" == true || "$SETUP" == true ]]
-  then
-    log "Downloading apachectl_template"
-    curl "$DOWNLOAD_URL/apachectl_template" -o "$WEBTRACKING_HOME/update/apachectl_template"
-  fi
-  
-  # Update apachectl files in IHS_BIN_DIR
-  if [[ ("$UPDATE_TEMPLATE" == true || "$SETUP" == true) && -f "$WEBTRACKING_HOME/update/apachectl_template" ]]
-  then
-    log "Updating apachectl files"
-    for apachectl_file in "$IHS_BIN_DIR"/apachectl*
-    do
-      if [[ -f "$apachectl_file" ]] && grep -q "^IHS_CONFIGURATION_FILE" "$apachectl_file"
-      then
-        log "Updating $apachectl_file"
-
-        # Store the line beginning with IHS_CONFIGURATION_FILE
-        ACTUAL_CONF_FILE=$(grep "^IHS_CONFIGURATION_FILE" "$apachectl_file")
-        
-        # Replace the file with the content of apachectl_template
-        cp -p "$WEBTRACKING_HOME/update/apachectl_template" "$apachectl_file"
-
-        # Set execute permissions         
-        chmod +x "$apachectl_file"
-        
-        # Add back the original IHS_CONFIGURATION_FILE line
-        sed -i "/^IHS_CONFIGURATION_FILE/c\\$ACTUAL_CONF_FILE" "$apachectl_file"
-
-        # version
-        "$apachectl_file" --version | head -1 || true
-
-        # status
-        "$apachectl_file" status || true
-      fi
-    done
-    
-    # Remove the apachectl_template
-    rm -f "$WEBTRACKING_HOME/update/apachectl_template"
   fi
 
   # Setup splunk universal forwarder and webtracking binaries if setup option is selected
@@ -327,14 +327,14 @@ EOF
     crontab -
     crontab -l | grep -B1 "/webtracking/bin/check.sh"
   fi
-
-  if [[ $SETUP == false ]]
-  then
-    log "WebTracking update process completed"
-  else
-    log "WebTracking setup process completed"
-  fi
 else
   log "ERROR: The folder $WEBTRACKING_HOME does not exist"
   exit 1
+fi
+
+if [[ $SETUP == false ]]
+then
+  log "WebTracking update process completed"
+else
+  log "WebTracking setup process completed"
 fi

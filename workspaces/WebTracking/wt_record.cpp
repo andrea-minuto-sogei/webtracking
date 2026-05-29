@@ -171,12 +171,14 @@ class wt_record
          if (archive_folder) wt_record::archive_folder.assign(archive_folder);
          else wt_record::archive_folder.assign(wt_record::folder).append("/archives");
 
-         // create directories if they don't exist yet
-         std::filesystem::create_directories(wt_record::folder);
-         std::filesystem::create_directories(wt_record::archive_folder);
-
          // minutes to live
          wt_record::minutes = (minutes >= 5 && minutes <= 120) ? minutes : 30;
+         
+         // create directories if they don't exist yet
+         std::error_code ec_folder;
+         std::filesystem::create_directories(wt_record::folder, ec_folder);
+         std::error_code ec_archive_folder;
+         std::filesystem::create_directories(wt_record::archive_folder, ec_archive_folder);
       }
       
       // open new file
@@ -185,15 +187,18 @@ class wt_record
          // update variables
          name = std::format("webtracking.{}.{}.log", wt_record::pid, wt_record::sequence++);
          file_path.assign(wt_record::folder).append(1, '/').append(name);
-
-         // set exception that might be thrown
-         out.exceptions(std::ofstream::failbit | std::ofstream::badbit);
-
+         
          // clear state to avoid problem
          out.clear();
 
+         // set exception that might be thrown
+         out.exceptions(std::ofstream::failbit | std::ofstream::badbit);
+         
          // open the first file
          out.open(file_path);
+
+         // reset exceptions
+         out.exceptions({});
 
          // set start time
          start = time(NULL);
@@ -223,7 +228,7 @@ class wt_record
       // throw a std::ios_base::failure in case of error
       void write_data(const std::string &text)
       {
-         if (out.is_open() && out.good())
+         if (out.good() && out.is_open())
          {
             // the file is already open and the state is good
 
@@ -255,14 +260,22 @@ class wt_record
             }
          }
 
-         if (!out.is_open() || !out.good())
+         if (!out.good() || !out.is_open())
          {
             // the file is not open yet or the state is not good
 
-            // open the new file
+            try 
+            { 
+               // try to open the new file
                open_new_file();
                std::println(out, "{}", text);
                out.flush();
+            }
+            
+            catch (const std::ios_base::failure &) 
+            { 
+               /* impossible to write anything */
+            }
          }
       }
 };
@@ -291,8 +304,16 @@ unsigned short wt_record_init(pid_t pid, const char *folder, const char *archive
    // initialize static data
    record.init(pid, folder, archive_folder, minutes);
 
-   // initialize first file
-   record.open_new_file();
+   try 
+   { 
+      // try to open and initialize the first file
+      record.open_new_file(); 
+   }
+   
+   catch (const std::ios_base::failure &) 
+   { 
+      return 0; /* KO */ 
+   }
 
    // enable manage move current file
    std::thread move_file_thread = std::thread(manage_move_file);
@@ -322,11 +343,23 @@ unsigned short wt_record_check_filesystem(const char *folder, const char *archiv
    else archive.assign(source).append("/archives");
 
    // create directories if they don't exist yet
-   std::filesystem::create_directories(source);
-   std::filesystem::create_directories(archive);
+   std::error_code ec_folder;
+   std::filesystem::create_directories(source, ec_folder);
+   std::error_code ec_archive_folder;
+   std::filesystem::create_directories(archive, ec_archive_folder);
 
+   if (ec_folder)
+   {
+      if (!std::filesystem::exists(source) || !std::filesystem::is_directory(source)) return 0; /* KO */
+   }
+
+   if (ec_archive_folder)
+   {
+      if (!std::filesystem::exists(archive) || !std::filesystem::is_directory(archive)) return 0; /* KO */
+   }
+
+   // Check whether log folder and archive folder behave to the same filesystem
    struct statvfs source_stat, archive_stat;
-   
    if (!statvfs(source.c_str(), &source_stat) &&
        !statvfs(archive.c_str(), &archive_stat))
    {

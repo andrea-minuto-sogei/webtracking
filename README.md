@@ -6,7 +6,9 @@ The **Web Tracking Apache Module** is a plugin for:
 
 - **Apache HTTP Server 2.4.x**
 - **IBM HTTP Server 9.0.x**
-- **64-bit Linux (RHEL 8/9 and later)**
+- **64-bit Linux** *(certified for Red Hat Enterprise Linux 8.x and Red Hat Enterprise Linux 9.x)*
+- **Support SELinux in *enforcing* mode**
+- **Support non-root configuration** *(though it is not the preferred or suggested mode)*
 
 ### 🔍 Purpose
 

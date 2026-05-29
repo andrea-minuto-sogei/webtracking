@@ -7,9 +7,13 @@ extern "C"
 {
 #endif
 
+/* 0 = KO, 1 = OK */
 unsigned short wt_record_init(pid_t pid, const char *folder, const char *archive_folder, unsigned int minutes);
-const char *wt_record_current_name();
+
+/* 0 = KO, 1 = OK */
 unsigned short wt_record_check_filesystem(const char *folder, const char *archive_folder);
+
+const char *wt_record_current_name();
 void wt_record_release();
 
 #ifdef __cplusplus
