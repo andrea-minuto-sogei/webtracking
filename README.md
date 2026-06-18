@@ -268,12 +268,12 @@ https://www.mycorp.com/html/
 
 ### ⏱️ Crontab Watchdog
 
-To ensure log files are moved from `RecordFolder` to `ArchiveFolder`, use a cron job:
+
+To ensure that log files are moved from `RecordFolder` to `ArchiveFolder`, that the `splunkd` process is running, and that stale files are deleted, add the following cron job:
 
 ```bash
-# record file watchdog
-0,30 8-20 * * * find /webtracking/logs/ -name "webtracking*.log" -type f -mmin +30 -exec mv {} /webtracking/splunk/ \;
-```
+# Check splunkd process and remove stale files
+*/15 * * * * /webtracking/bin/check.sh
 
 ---
 

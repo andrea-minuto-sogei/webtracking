@@ -1,27 +1,36 @@
 #!/bin/bash 
 
+# This script is intended to be run periodically (e.g. via cron) to check the health of the Splunk forwarder on the webtracking server. 
+#  It performs the following checks:
+#     1. Verifies that the splunkd process is running by checking for the presence of the splunkd binary in the process list.
+#     2. Checks the free space on the filesystem where /webtracking is mounted, ensuring that it has more than 20% free space.
+#     If any of the checks fail, it attempts to restart the Splunk forwarder service.
+
+# Return codes:
+# 0 - All checks passed, no action needed
+# 1 - WEBTRACKING_HOME directory does not exist or is not accessible
+# 2 - Script not run as the correct user
+# 3 - Splunk restart failed
+
 # Version
-VERSION=2026.3.3.1
+VERSION=2026.6.5.1
 
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Path to the splunkd binary (used to identify the process)
-SPLUNKD_PATH="splunkd"
-# Full command to restart splunk
-SPLUNK_RESTART_CMD=("/webtracking/splunkforwarder/bin/splunk" restart --answer-yes --no-prompt)
 # Mount point to check
 WEBTRACKING_HOME="/webtracking"
 # Directory where webtracking Splunk files are stored (for cleanup)
-WEBTRACKING_SPLUNK="/webtracking/splunk"
+WEBTRACKING_SPLUNK="$WEBTRACKING_HOME/splunk"
 # Directory for webtracking data files (for cleanup)
-WEBTRACKING_LOGS="/webtracking/logs"
-# owner of the IHS installation (required user to run this script)
-IHS_OWNER="webihs"
+WEBTRACKING_LOGS="$WEBTRACKING_HOME/logs"
+# Path to the splunkd binary (used to identify the process)
+SPLUNKD_PATH="splunkd"
+
 
 log()
 {
-   # Extract hour in 00–23
+   # Extract hour in 00-23
    local h=$(date +%H)
 
    # Milliseconds from nanoseconds
@@ -83,12 +92,43 @@ perform_restart()
 log "$0: started"
 log "version: $VERSION"
 
-if [[ "$(whoami)" != "$IHS_OWNER" ]]
+# Owner of WEBTRACKING_HOME directory (required user to run this script)
+if [ -d "$WEBTRACKING_HOME" ]
 then
-   log "ERROR: The command was launched as the user $(whoami) and must have been run as the $IHS_OWNER user"
+   WEBTRACKING_OWNER=$(stat -c '%U' "$WEBTRACKING_HOME")
+else
+   echo "ERROR: WEBTRACKING_HOME directory $WEBTRACKING_HOME does not exist" >&2
    exit 1
 fi
 
+# if WEBTRACKING_OWNER is root
+# then we use systemctl to stop the service
+# else we use the splunk CLI with the appropriate user
+if [ "$WEBTRACKING_OWNER" = "root" ]
+then
+   # Command to stop splunk (used before update)
+   SPLUNK_STOP_CMD=(systemctl stop SplunkForwarder)
+   
+   # Command to restart splunk
+   SPLUNK_RESTART_CMD=(systemctl restart SplunkForwarder)
+else
+   # Command to stop splunk (used before update)
+   SPLUNK_STOP_CMD=("$WEBTRACKING_HOME/splunkforwarder/bin/splunk" stop --answer-yes --no-prompt)
+
+   # Command to restart splunk
+   SPLUNK_RESTART_CMD=("$WEBTRACKING_HOME/splunkforwarder/bin/splunk" restart --answer-yes --no-prompt)
+fi
+
+if [[ "$(whoami)" != "$WEBTRACKING_OWNER" ]]
+then
+   log "ERROR: The command was launched as the user $(whoami) and must have been run as the $WEBTRACKING_OWNER user"
+   exit 2
+fi
+
+# User
+log "Running as user: $(whoami)"
+
+# Move or remove the webtracking files as needed, then check splunkd process and free space, and restart if needed
 log "Move or remove the webtracking files as needed"
 
 # cleanup zero-byte and old files in WEBTRACKING_SPLUNK
@@ -116,11 +156,11 @@ fi
 if [[ -f "$WEBTRACKING_HOME/update/splunkforwarder.tgz" ]]
 then
    log "Update splunkforwarder binaries"
-   "$WEBTRACKING_HOME/splunkforwarder/bin/splunk" stop
+   "${SPLUNK_STOP_CMD[@]}"
    tar xaf "$WEBTRACKING_HOME/update/splunkforwarder.tgz" -C "$WEBTRACKING_HOME"
    "$WEBTRACKING_HOME/splunkforwarder/bin/splunk" start --accept-license --answer-yes --no-prompt
    find -L "$WEBTRACKING_HOME/splunkforwarder" -type l -exec rm -v {} \;
-   rm -fv "$WEBTRACKING_HOME/update/splunkforwarder.tgz"
+   rm -f "$WEBTRACKING_HOME/update/splunkforwarder.tgz"
 fi
 
 if is_splunkd_running
@@ -149,6 +189,6 @@ else
       exit 0
    else
       log "Splunk restart failed"
-      exit 2
+      exit 3
    fi
 fi

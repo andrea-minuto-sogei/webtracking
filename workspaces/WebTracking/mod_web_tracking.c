@@ -2,6 +2,7 @@
 
 /*
  * VERSION       DATE        DESCRIPTION
+ * 2026.6.16.1  2026-06-16   Fix filters to manage buckets with zero bytes as an EOS bucket
  * 2026.5.28.1  2026-05-28   Fix record files and folders management
  *                           Remove non-root user constraint
  *                           Add SELinux support
@@ -207,7 +208,7 @@ APLOG_USE_MODULE(web_tracking);
 #endif
 
 // version
-const char *version = "Web Tracking Apache Module 2026.5.28.1 (C17/C++23)";
+const char *version = "Web Tracking Apache Module 2026.6.16.1 (C17/C++23)";
 
 wt_counter_t *wt_counter = 0;
 static apr_shm_t *shm_counter = 0;
@@ -1234,16 +1235,16 @@ static int wt_status_hook(request_rec *r, int flags)
 {
    pthread_t tid = syscall(SYS_gettid);
 
-   if (APLOG_IS_LEVEL(r->server, APLOG_DEBUG)) 
+   if (APLOG_IS_LEVEL(r->connection->base_server, APLOG_DEBUG)) 
    {
-      ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "wt_status_hook(): [%ld] start", tid);
-      ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "wt_status_hook(): [%ld] flags = %d", tid, flags);
+      ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->connection->base_server, "wt_status_hook(): [%ld] start", tid);
+      ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->connection->base_server, "wt_status_hook(): [%ld] flags = %d", tid, flags);
    }
 
    if (flags == AP_STATUS_EXTENDED)
    {
-      if (APLOG_IS_LEVEL(r->server, APLOG_DEBUG)) 
-         ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "wt_status_hook(): [%ld] flags == AP_STATUS_EXTENDED", tid);
+      if (APLOG_IS_LEVEL(r->connection->base_server, APLOG_DEBUG)) 
+         ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->connection->base_server, "wt_status_hook(): [%ld] flags == AP_STATUS_EXTENDED", tid);
 
       pid_t pid = getpid();
 
@@ -1251,8 +1252,8 @@ static int wt_status_hook(request_rec *r, int flags)
       
       if (l != NULL)
       {
-         if (APLOG_IS_LEVEL(r->server, APLOG_DEBUG))
-            ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "wt_status_hook(): [%ld] Accept-Language = %s", tid, l);
+         if (APLOG_IS_LEVEL(r->connection->base_server, APLOG_DEBUG))
+            ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->connection->base_server, "wt_status_hook(): [%ld] Accept-Language = %s", tid, l);
 
          char language[32 + 1];
          strncpy(language, l, 32);
@@ -1273,36 +1274,36 @@ static int wt_status_hook(request_rec *r, int flags)
                   language[5] = 0;
                }
 
-               if (APLOG_IS_LEVEL(r->server, APLOG_DEBUG))
-                  ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "wt_status_hook(): [%ld] set locale %s", tid, language);
+               if (APLOG_IS_LEVEL(r->connection->base_server, APLOG_DEBUG))
+                  ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->connection->base_server, "wt_status_hook(): [%ld] set locale %s", tid, language);
 
                setlocale(LC_NUMERIC, language);
             }
             else
             {
-               if (APLOG_IS_LEVEL(r->server, APLOG_DEBUG))
-                  ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "wt_status_hook(): [%ld] set locale %s", tid, language);
+               if (APLOG_IS_LEVEL(r->connection->base_server, APLOG_DEBUG))
+                  ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->connection->base_server, "wt_status_hook(): [%ld] set locale %s", tid, language);
 
                setlocale(LC_NUMERIC, language);
             }
          }
          else
          {
-            if (APLOG_IS_LEVEL(r->server, APLOG_DEBUG))
-               ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "wt_status_hook(): [%ld] set default locale", tid);
+            if (APLOG_IS_LEVEL(r->connection->base_server, APLOG_DEBUG))
+               ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->connection->base_server, "wt_status_hook(): [%ld] set default locale", tid);
 
             setlocale(LC_NUMERIC, "");
          }
       }
       else
       {
-         if (APLOG_IS_LEVEL(r->server, APLOG_DEBUG))
-            ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "wt_status_hook(): [%ld] set default locale", tid);
+         if (APLOG_IS_LEVEL(r->connection->base_server, APLOG_DEBUG))
+            ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->connection->base_server, "wt_status_hook(): [%ld] set default locale", tid);
 
          setlocale(LC_NUMERIC, "");
       }
 
-      wt_config_t *conf = ap_get_module_config(r->server->module_config, &web_tracking_module);
+      wt_config_t *conf = ap_get_module_config(r->connection->base_server->module_config, &web_tracking_module);
 
       ap_rprintf(r, "   <hr>\n");
       ap_rprintf(r, "   <style>\n");
@@ -1385,13 +1386,13 @@ static int wt_status_hook(request_rec *r, int flags)
       ap_rprintf(r, "      </div>\n");
       ap_rprintf(r, "   </div>\n");
 
-      if (APLOG_IS_LEVEL(r->server, APLOG_DEBUG))
-         ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "wt_status_hook(): [%ld] end (OK)", tid);
+      if (APLOG_IS_LEVEL(r->connection->base_server, APLOG_DEBUG))
+         ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->connection->base_server, "wt_status_hook(): [%ld] end (OK)", tid);
 
       return OK;
    }
 
-   if (APLOG_IS_LEVEL(r->server, APLOG_DEBUG)) ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "wt_status_hook(): [%ld] end (DECLINED)", tid);
+   if (APLOG_IS_LEVEL(r->connection->base_server, APLOG_DEBUG)) ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->connection->base_server, "wt_status_hook(): [%ld] end (DECLINED)", tid);
 
    return DECLINED;
 }

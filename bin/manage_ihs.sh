@@ -16,13 +16,13 @@
 # 7. Restarts all WebTracking services.
 
 # How to run:
-# curl http://mdwservizio01.srv.sogei.it/WebTracking/manage.sh -o manage.sh
-# sh manage.sh --all | tee manage.log
-# sh manage.sh --splunkforwarder --webtracking --template | tee manage.log
-# sh manage.sh --setup | tee manage.log
-# sh manage.sh --help
-# sh manage.sh --version
-# rm manage.sh
+# curl http://mdwservizio01.srv.sogei.it/WebTracking/manage_ihs.sh -o manage_ihs.sh
+# sh manage_ihs.sh --all | tee manage.log
+# sh manage_ihs.sh --splunkforwarder --webtracking --template | tee manage.log
+# sh manage_ihs.sh --setup | tee manage.log
+# sh manage_ihs.sh --help
+# sh manage_ihs.sh --version
+# rm manage_ihs.sh
 
 # Note
 # If no apachectl* file is built using the apachectl_template, 
@@ -30,7 +30,25 @@
 # IHS_CONFIGURATION_FILE=/prod/IBM/HTTPServer/conf.d/httpd_<service>.conf
 
 # Version
-VERSION=2026.5.14.1
+VERSION=2026.6.5.1
+
+version()
+{
+   echo "$(basename "$0") version $VERSION"
+}
+
+# log function
+log()
+{
+   # Extract hour in 00–23
+   local h=$(date +%H)
+
+   # Milliseconds from nanoseconds
+   local ms=$(date +%N | cut -c1-3)
+
+   # Output matching the format: yyyy-MM-dd HH:mm:ss:SSS z
+   printf '[%s]: %s\n' "$(date +%Y-%m-%d) $h:$(date +%M):$(date +%S):$ms $(date +%Z)" "$*"
+}
 
 # Default behavior: if no options, print help and exit
 UPDATE_SPLUNK=false
@@ -89,7 +107,7 @@ done
 # If help, print help and exit
 if [[ "$SHOW_HELP" == true ]]
 then
-  echo "Usage: $0 [OPTIONS]"
+  echo "Usage: $(basename "$0") [OPTIONS]"
   echo ""
   echo "Options:"
   echo "  --splunkforwarder    Update the Splunk Universal Forwarder"
@@ -107,7 +125,7 @@ fi
 # If version, print version and exit
 if [[ "$SHOW_VERSION" == true ]]
 then
-  echo "WebTracking Update or Setup Script Version: $VERSION"
+  version
   exit 0
 fi
 
@@ -120,19 +138,6 @@ IHS_CONF_DIR="$IHS_HOME/conf.d"
 DOWNLOAD_URL="http://mdwservizio01.srv.sogei.it/WebTracking"
 SPLUNKFORWARDER_URL="$DOWNLOAD_URL/splunkforwarder.tgz"
 WEBTRACKING_BIN_URL="$DOWNLOAD_URL/webtracking-bin.zip"
-
-# log function
-log()
-{
-   # Extract hour in 00–23
-   local h=$(date +%H)
-
-   # Milliseconds from nanoseconds
-   local ms=$(date +%N | cut -c1-3)
-
-   # Output matching the format: yyyy-MM-dd HH:mm:ss:SSS z
-   printf '[%s]: %s\n' "$(date +%Y-%m-%d) $h:$(date +%M):$(date +%S):$ms $(date +%Z)" "$*"
-}
 
 # Get apachectl files that match the given conf file (may be multiple)
 get_apachectl_for_conf()
@@ -239,7 +244,7 @@ then
     tar xaf "$WEBTRACKING_HOME/update/splunkforwarder.tgz" -C "$WEBTRACKING_HOME"
     rm -f "$WEBTRACKING_HOME/update/splunkforwarder.tgz"
     log "splunk user: admin, password: admin1234"
-    "$WEBTRACKING_HOME/splunkforwarder/bin/splunk" start --accept-license
+    "$WEBTRACKING_HOME/splunkforwarder/bin/splunk" start --accept-license --answer-yes --no-prompt
 
     # Setting up splunk universal forwarder deployment client
     log "Setting up splunk universal forwarder deployment client"
@@ -247,9 +252,10 @@ then
     echo 'targetUri = TRASPLMGLP01-03.srv.sogei.it:8089' >> "$WEBTRACKING_HOME/splunkforwarder/etc/system/local/deploymentclient.conf"
     cat "$WEBTRACKING_HOME/splunkforwarder/etc/system/local/deploymentclient.conf"
     
-    log "Sleeping for 15 seconds before restarting splunk universal forwarder"
-    sleep 15
+    log "Sleeping for 10 seconds before restarting splunk universal forwarder"
+    sleep 10
     "$WEBTRACKING_HOME/splunkforwarder/bin/splunk" restart
+    "$WEBTRACKING_HOME/splunkforwarder/bin/splunk" --version | tail -1 || true
 
     # Installing webtracking binaries
     log "Installing webtracking binaries"
@@ -266,7 +272,7 @@ then
     tar xaf "$WEBTRACKING_HOME/update/splunkforwarder.tgz" -C "$WEBTRACKING_HOME"
     "$WEBTRACKING_HOME/splunkforwarder/bin/splunk" start --accept-license --answer-yes --no-prompt
     find -L "$WEBTRACKING_HOME/splunkforwarder" -type l -exec rm -v {} \;
-    rm -fv "$WEBTRACKING_HOME/update/splunkforwarder.tgz"
+    rm -f "$WEBTRACKING_HOME/update/splunkforwarder.tgz"
     "$WEBTRACKING_HOME/splunkforwarder/bin/splunk" --version | tail -1 || true
   fi
   

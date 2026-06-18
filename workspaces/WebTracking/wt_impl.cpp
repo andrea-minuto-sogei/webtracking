@@ -2308,6 +2308,13 @@ try {
                   if (APLOG_R_IS_LEVEL(f->r, request_log_level))
                      ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_input_filter(): [%ld] partial bytes read so far = %ld", thread_id, ctx->body.length());
                }
+               else
+               {
+                  if (APLOG_R_IS_LEVEL(f->r, request_log_level))
+                     ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_input_filter(): [%ld] append an EOS bucket because read 0 bytes from last bucket", thread_id);
+                  apr_bucket *eos = apr_bucket_eos_create(f->c->bucket_alloc);
+                  APR_BRIGADE_INSERT_TAIL(bb, eos);
+               }
             }
             else
             {
@@ -3085,6 +3092,13 @@ try {
 
                return ap_pass_brigade(f->next, bb);
             }
+         }
+         else
+         {
+            if (APLOG_R_IS_LEVEL(f->r, request_log_level))
+               ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_output_filter(): [%ld] append an EOS bucket because read 0 bytes from last bucket", thread_id);
+            apr_bucket *eos = apr_bucket_eos_create(f->c->bucket_alloc);
+            APR_BRIGADE_INSERT_TAIL(bb, eos);
          }
       }
       else
