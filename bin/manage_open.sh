@@ -10,7 +10,7 @@ set -euo pipefail
 # rm manage_open.sh
 
 # Version
-VERSION="2026.6.8.1"
+VERSION="2026.6.18.1"
 
 # Variables
 WEBTRACKING_HOME="/webtracking"
@@ -83,6 +83,9 @@ setup()
    
    log "Cleaning up"
    rm -f webtracking-bin.zip
+
+   log "Displaying webtracking version"
+   cat $WEBTRACKING_HOME/bin/version.txt
    
    log "Setting ownership and permissions"
    chown root:apache $WEBTRACKING_HOME
@@ -190,6 +193,9 @@ update()
    log "Cleaning up"
    rm -f webtracking-bin.zip
 
+   log "Displaying webtracking version"
+   cat $WEBTRACKING_HOME/bin/version.txt
+
    log "Starting Apache web server"
    systemctl start httpd
    
@@ -202,7 +208,13 @@ update()
    systemctl stop SplunkForwarder
    
    log "Extracting new Splunk forwarder binaries"
-   tar xaf $WEBTRACKING_HOME/update/splunkforwarder.tgz -C "$WEBTRACKING_HOME"
+   tar xaf splunkforwarder.tgz -C "$WEBTRACKING_HOME"
+
+   log "Setting ownership and permissions for Splunk forwarder"
+   chown -R apache:apache $WEBTRACKING_HOME/splunkforwarder
+
+   log "Disabling boot start for Splunk forwarder"
+   $WEBTRACKING_HOME/splunkforwarder/bin/splunk disable boot-start -user apache -systemd-managed 1
    
    log "Starting Splunk forwarder"
    sudo -u apache $WEBTRACKING_HOME/splunkforwarder/bin/splunk start --accept-license --answer-yes --no-prompt
@@ -211,8 +223,19 @@ update()
    find -L $WEBTRACKING_HOME/splunkforwarder -type l -exec rm -v {} \;
    
    log "Removing update archive"
-   rm -f "$WEBTRACKING_HOME/update/splunkforwarder.tgz"
-   
+   rm -f splunkforwarder.tgz
+
+   log "Wait 10 seconds and stop Splunk forwarder"
+   sleep 10
+   sudo -u apache $WEBTRACKING_HOME/splunkforwarder/bin/splunk stop
+
+   log "Enabling boot start for Splunk forwarder"
+   $WEBTRACKING_HOME/splunkforwarder/bin/splunk enable boot-start -user apache -systemd-managed 1
+
+   log "Reloading systemd daemon and start Splunk forwarder"
+   systemctl daemon-reload
+   systemctl start SplunkForwarder
+
    log "Displaying Splunk forwarder version"
    $WEBTRACKING_HOME/splunkforwarder/bin/splunk --version | tail -1 || true
 

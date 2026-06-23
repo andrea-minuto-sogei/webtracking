@@ -593,6 +593,7 @@ struct wt_output_filter_cpp
    bool output_header;
    bool output_filter;
    bool headers_found;
+   bool logical_eos; /* True if the final buckect is empty */
 };
 
 std::string wt_inflate(const std::string &in, int wrap)
@@ -1343,6 +1344,7 @@ try
          output_filter_ctx->output_header = output_header;
          output_filter_ctx->output_filter = output_filter;
          output_filter_ctx->headers_found = false;
+         output_filter_ctx->logical_eos = false;
 
          if (APLOG_R_IS_LEVEL(r, request_log_level))
          {
@@ -2308,13 +2310,6 @@ try {
                   if (APLOG_R_IS_LEVEL(f->r, request_log_level))
                      ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_input_filter(): [%ld] partial bytes read so far = %ld", thread_id, ctx->body.length());
                }
-               else
-               {
-                  if (APLOG_R_IS_LEVEL(f->r, request_log_level))
-                     ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_input_filter(): [%ld] append an EOS bucket because read 0 bytes from last bucket", thread_id);
-                  apr_bucket *eos = apr_bucket_eos_create(f->c->bucket_alloc);
-                  APR_BRIGADE_INSERT_TAIL(bb, eos);
-               }
             }
             else
             {
@@ -2573,25 +2568,159 @@ try {
       return ap_pass_brigade(f->next, bb);
    }
 
+   // Initialize timestamp
+   apr_time_t start_filter = apr_time_now();
+   if (ctx->start_o == 0) ctx->start_o = start_filter;
+
    // empty brigade
    if (APR_BRIGADE_EMPTY(bb))
    {
       if (APLOG_R_IS_LEVEL(f->r, request_log_level))
-      {
          ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_output_filter(): [%ld] the given brigade is empty", thread_id);
-         ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_output_filter(): [%ld] end (ap_pass_brigade)", thread_id);
-      }
 
+      // logical eos?
+      if (ctx->logical_eos)
+      {
+         
+         if (APLOG_R_IS_LEVEL(f->r, request_log_level))
+            ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_output_filter(): [%ld] **** LOGICAL EOS ****", thread_id);
+
+         if (ctx->output_filter)
+         {
+            if (APLOG_R_IS_LEVEL(f->r, request_log_level))
+            {
+               ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_output_filter(): [%ld] **** START END OF RESPONSE BODY ****", thread_id);
+               ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_output_filter(): [%ld] total bytes read = %ld", thread_id, ctx->body.length());
+            }
+
+            if (!ctx->body.empty())
+            {
+               if (const char *ce = apr_table_get(f->r->headers_out, "Content-Encoding");
+                   ce && (!std::strcmp(ce, "deflate") || !std::strcmp(ce, "gzip")))
+               {
+                  if (APLOG_R_IS_LEVEL(f->r, request_log_level))
+                     ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_output_filter(): [%ld] the response body is compressed (%s)", thread_id, ce);
+                  
+                  // increment counter
+                  apr_atomic_inc32(&ctx->conf->response_with_compressed_bodies);
+                  if (wt_counter) apr_atomic_inc32(&wt_counter->response_with_compressed_bodies);
+
+                  if (ctx->conf->inflate_response == 1)
+                  {
+                     if (APLOG_R_IS_LEVEL(f->r, request_log_level))
+                        ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_output_filter(): [%ld] the response body must be inflated", thread_id);
+
+                     if (!ctx->body.empty())
+                     {
+                        if (APLOG_R_IS_LEVEL(f->r, request_log_level))
+                           ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_output_filter(): [%ld] payload length (deflated) = %ld", thread_id, ctx->body.length());
+
+                        if (APLOG_R_IS_LEVEL(f->r, request_log_level))
+                           ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_output_filter(): [%ld] inflate the payload", thread_id);
+                        
+                        std::string inflated = wt_inflate(ctx->body, !std::strcmp(ce, "gzip") ? 2 : 1);
+                        
+                        if (!inflated.empty())
+                        {
+                           if (APLOG_R_IS_LEVEL(f->r, request_log_level))
+                              ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_output_filter(): [%ld] payload length (inflated) = %ld", thread_id, inflated.length());
+                           
+                           ctx->body.assign(inflated);
+                        }
+                        else
+                        {
+                           if (APLOG_R_IS_LEVEL(f->r, request_log_level))
+                              ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_output_filter(): [%ld] payload not inflated (failure)", thread_id);
+                        }
+                     }
+                     else
+                     {
+                        if (APLOG_R_IS_LEVEL(f->r, request_log_level))
+                           ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_output_filter(): [%ld] weird content-encoding because there is nothing to inflate", thread_id);
+                     }
+                  }
+                  else
+                  {
+                     if (APLOG_R_IS_LEVEL(f->r, request_log_level))
+                        ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_output_filter(): [%ld] the response must be left deflated", thread_id);
+                  }
+               }
+
+               if (APLOG_R_IS_LEVEL(f->r, request_log_level))
+                  ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_output_filter(): [%ld] payload length = %ld", thread_id, ctx->body.length());
+               
+               if (ctx->conf->log_enabled)
+               {
+                  if (ctx->body.length() > 0 && 
+                      ((ctx->body.length() / 1'048'576L) <= ctx->conf->body_limit || ctx->trace_uri))
+                  {
+                     // BASE64 encoding
+                     apr_time_t start_b64 = apr_time_now();
+                     std::string record_b64 = base64encode(ctx->body);
+                     if (APLOG_R_IS_LEVEL(f->r, request_log_level))
+                        ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_output_filter(): [%ld] BASE64 encoding elapsed time = %s",
+                                    thread_id, to_string(apr_time_now() - start_b64).c_str());
+   
+                     // response body data
+                     std::string response_body_data { "\"**RESPONSE_BODY**\"|" + record_b64 };
+                     char * data = new char[response_body_data.length() + 1];
+                     std::strcpy(data, response_body_data.c_str());
+                     apr_table_setn(f->r->notes, "response_body_data", data);                  
+                  }
+                  else
+                  {
+                     if (APLOG_R_IS_LEVEL(f->r, request_log_level))
+                        ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_output_filter(): [%ld] payload length is greater than body_limit and the request is not a traced uri, skip response body", thread_id);
+                  }
+               }
+               else
+               {
+                  if (APLOG_R_IS_LEVEL(f->r, request_log_level))
+                     ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_output_filter(): [%ld] nothing to save since there isn't a configured access file", thread_id);
+               }
+   
+               if (APLOG_R_IS_LEVEL(f->r, request_log_level))
+                  ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_output_filter(): [%ld] **** FINISH END OF RESPONSE BODY ****", thread_id);
+   
+               // increment counter
+               apr_atomic_inc32(&ctx->conf->response_bodies);
+               if (wt_counter) apr_atomic_inc32(&wt_counter->response_bodies);
+   
+               // update elapsed times
+               apr_time_t end_filter = apr_time_now();
+               ctx->elapsed += end_filter - start_filter;
+   
+               // update module overhead for request
+               module_overhead_for_current_request += ctx->elapsed;
+   
+               if (APLOG_R_IS_LEVEL(f->r, request_log_level))
+               {
+                  apr_time_t elapsed = end_filter - ctx->start_o;
+                  ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_output_filter(): [%ld] ELAPSED TIMES: total = %s, filter = %s",
+                              thread_id, to_string(elapsed).c_str(), to_string(ctx->elapsed).c_str());
+               }
+            }
+            else
+            {
+               if (APLOG_R_IS_LEVEL(f->r, request_log_level))
+                  ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_output_filter(): [%ld] payload length = 0, nothing to do", thread_id);
+            }
+         }
+         else
+         {
+            ctx->elapsed += apr_time_now() - start_filter;
+         }
+      }
+      
       // Delete active filter context
       f->ctx = nullptr;
       delete ctx;
+      
+      if (APLOG_R_IS_LEVEL(f->r, request_log_level))
+         ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_output_filter(): [%ld] end (ap_pass_brigade)", thread_id);
 
       return ap_pass_brigade(f->next, bb);
    }
-
-   // Initialize timestamp
-   apr_time_t start_filter = apr_time_now();
-   if (ctx->start_o == 0) ctx->start_o = start_filter;
 
    if (f->r && f->r->headers_out && ctx->output_filter)
    {
@@ -2900,6 +3029,10 @@ try {
             ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_output_filter(): [%ld] read %ld bytes", thread_id, bytes);
          if (bytes > 0)
          {
+            // reset logical eos
+            ctx->logical_eos = false;
+
+            // check if maximum body length is reached
             if (((ctx->body.length() + bytes) / 1'048'576L) > ctx->conf->body_limit)
             {
                if (APLOG_R_IS_LEVEL(f->r, request_log_level))
@@ -3095,10 +3228,13 @@ try {
          }
          else
          {
-            if (APLOG_R_IS_LEVEL(f->r, request_log_level))
-               ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_output_filter(): [%ld] append an EOS bucket because read 0 bytes from last bucket", thread_id);
-            apr_bucket *eos = apr_bucket_eos_create(f->c->bucket_alloc);
-            APR_BRIGADE_INSERT_TAIL(bb, eos);
+            if (ctx->body.length() > 0)
+            {
+               if (APLOG_R_IS_LEVEL(f->r, request_log_level))
+                  ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_output_filter(): [%ld] append a logical EOS because read 0 bytes from latest bucket", thread_id);
+               
+               ctx->logical_eos = true;
+            }
          }
       }
       else

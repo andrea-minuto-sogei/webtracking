@@ -30,7 +30,7 @@
 # IHS_CONFIGURATION_FILE=/prod/IBM/HTTPServer/conf.d/httpd_<service>.conf
 
 # Version
-VERSION=2026.6.5.1
+VERSION=2026.6.22.1
 
 version()
 {
@@ -211,131 +211,138 @@ then
 fi
 
 # Check whether exists the folder /webtracking
-if [[ -d "$WEBTRACKING_HOME" ]]
+if [[ "$UPDATE_SPLUNK" == true || "$UPDATE_WEBTRACKING" == true || "$SETUP" == true ]]
 then
-  # Create necessary directory
-  mkdir -p "$IHS_CONF_DIR"
-  
-  # Create update directory if it doesn't exist
-  mkdir -p "$WEBTRACKING_HOME/update"
-  
-  # Download files based on options
-  if [[ "$UPDATE_SPLUNK" == true || "$SETUP" == true ]]
+  if [[ -d "$WEBTRACKING_HOME" ]]
   then
-    log "Downloading splunk universal forwarder binaries"
-    curl "$SPLUNKFORWARDER_URL" -o "$WEBTRACKING_HOME/update/splunkforwarder.tgz"
-  fi
-  
-  if [[ "$UPDATE_WEBTRACKING" == true || "$SETUP" == true ]]
-  then
-    log "Downloading webtracking binaries"
-    curl "$WEBTRACKING_BIN_URL" -o "$WEBTRACKING_HOME/update/webtracking-bin.zip"
-  fi
-
-  # Setup splunk universal forwarder and webtracking binaries if setup option is selected
-  if [[ "$SETUP" == true && -f "$WEBTRACKING_HOME/update/splunkforwarder.tgz" && -f "$WEBTRACKING_HOME/update/webtracking-bin.zip" ]]
-  then
-    log "Setting up WebTracking environment for the first time"
-
-    log "Creating necessary directories"
-    mkdir -p "$IHS_HOME/conf.d"
-
-    log "Installing splunk universal forwarder binaries"
-    tar xaf "$WEBTRACKING_HOME/update/splunkforwarder.tgz" -C "$WEBTRACKING_HOME"
-    rm -f "$WEBTRACKING_HOME/update/splunkforwarder.tgz"
-    log "splunk user: admin, password: admin1234"
-    "$WEBTRACKING_HOME/splunkforwarder/bin/splunk" start --accept-license --answer-yes --no-prompt
-
-    # Setting up splunk universal forwarder deployment client
-    log "Setting up splunk universal forwarder deployment client"
-    echo '[target-broker:deploymentServer]' > "$WEBTRACKING_HOME/splunkforwarder/etc/system/local/deploymentclient.conf"
-    echo 'targetUri = TRASPLMGLP01-03.srv.sogei.it:8089' >> "$WEBTRACKING_HOME/splunkforwarder/etc/system/local/deploymentclient.conf"
-    cat "$WEBTRACKING_HOME/splunkforwarder/etc/system/local/deploymentclient.conf"
+    if [[ "$SETUP" == true ]]
+    then
+      log "Setting up WebTracking environment for the first time"
+      # Create necessary directory
+      mkdir -p "$IHS_CONF_DIR"
+      
+      # Create update directory if it doesn't exist
+      mkdir -p "$WEBTRACKING_HOME/update"
+    fi
     
-    log "Sleeping for 10 seconds before restarting splunk universal forwarder"
-    sleep 10
-    "$WEBTRACKING_HOME/splunkforwarder/bin/splunk" restart
-    "$WEBTRACKING_HOME/splunkforwarder/bin/splunk" --version | tail -1 || true
+    # Download files based on options
+    if [[ "$UPDATE_SPLUNK" == true || "$SETUP" == true ]]
+    then
+      log "Downloading splunk universal forwarder binaries"
+      curl "$SPLUNKFORWARDER_URL" -o "$WEBTRACKING_HOME/update/splunkforwarder.tgz"
+    fi
+    
+    if [[ "$UPDATE_WEBTRACKING" == true || "$SETUP" == true ]]
+    then
+      log "Downloading webtracking binaries"
+      curl "$WEBTRACKING_BIN_URL" -o "$WEBTRACKING_HOME/update/webtracking-bin.zip"
+    fi
 
-    # Installing webtracking binaries
-    log "Installing webtracking binaries"
-    unzip -uo "$WEBTRACKING_HOME/update/webtracking-bin.zip" -d "$(dirname "$WEBTRACKING_HOME")"
-    rm -f "$WEBTRACKING_HOME/update/webtracking-bin.zip"
-    cat "$WEBTRACKING_HOME/bin/version.txt"
-  fi
-  
-  # Update splunk universal forwarder
-  if [[ "$UPDATE_SPLUNK" == true && -f "$WEBTRACKING_HOME/update/splunkforwarder.tgz" ]]
-  then
-    log "Update splunk universal forwarder binaries"
-    "$WEBTRACKING_HOME/splunkforwarder/bin/splunk" stop
-    tar xaf "$WEBTRACKING_HOME/update/splunkforwarder.tgz" -C "$WEBTRACKING_HOME"
-    "$WEBTRACKING_HOME/splunkforwarder/bin/splunk" start --accept-license --answer-yes --no-prompt
-    find -L "$WEBTRACKING_HOME/splunkforwarder" -type l -exec rm -v {} \;
-    rm -f "$WEBTRACKING_HOME/update/splunkforwarder.tgz"
-    "$WEBTRACKING_HOME/splunkforwarder/bin/splunk" --version | tail -1 || true
-  fi
-  
-  # Update webtracking
-  if [[ "$UPDATE_WEBTRACKING" == true && -f "$WEBTRACKING_HOME/update/webtracking-bin.zip" ]]
-  then
-    # Stop all webtracking services
-    log "Stopping webtracking services"
-    for conf_file in "$IHS_CONF_DIR"/webtracking*.conf
-    do
-      if [[ -f "$conf_file" ]]
-      then
+    # Setup splunk universal forwarder and webtracking binaries if setup option is selected
+    if [[ "$SETUP" == true && -f "$WEBTRACKING_HOME/update/splunkforwarder.tgz" && -f "$WEBTRACKING_HOME/update/webtracking-bin.zip" ]]
+    then
+      log "Setting up WebTracking environment for the first time"
+
+      log "Creating necessary directories"
+      mkdir -p "$IHS_HOME/conf.d"
+
+      log "Installing splunk universal forwarder binaries"
+      tar xaf "$WEBTRACKING_HOME/update/splunkforwarder.tgz" -C "$WEBTRACKING_HOME"
+      rm -f "$WEBTRACKING_HOME/update/splunkforwarder.tgz"
+      log "Starting splunk universal forwarder"
+      "$WEBTRACKING_HOME/splunkforwarder/bin/splunk" start --accept-license --answer-yes --no-prompt
+
+      # Setting up splunk universal forwarder deployment client
+      log "Setting up splunk universal forwarder deployment client"
+      echo '[target-broker:deploymentServer]' > "$WEBTRACKING_HOME/splunkforwarder/etc/system/local/deploymentclient.conf"
+      echo 'targetUri = TRASPLMGLP01-03.srv.sogei.it:8089' >> "$WEBTRACKING_HOME/splunkforwarder/etc/system/local/deploymentclient.conf"
+      cat "$WEBTRACKING_HOME/splunkforwarder/etc/system/local/deploymentclient.conf"
+      
+      log "Sleeping for 10 seconds before restarting splunk universal forwarder"
+      sleep 10
+      "$WEBTRACKING_HOME/splunkforwarder/bin/splunk" restart
+      "$WEBTRACKING_HOME/splunkforwarder/bin/splunk" --version | tail -1 || true
+
+      # Installing webtracking binaries
+      log "Installing webtracking binaries"
+      unzip -uo "$WEBTRACKING_HOME/update/webtracking-bin.zip" -d "$(dirname "$WEBTRACKING_HOME")"
+      rm -f "$WEBTRACKING_HOME/update/webtracking-bin.zip"
+      cat "$WEBTRACKING_HOME/bin/version.txt"
+    fi
+    
+    # Update splunk universal forwarder
+    if [[ "$UPDATE_SPLUNK" == true && -f "$WEBTRACKING_HOME/update/splunkforwarder.tgz" ]]
+    then
+      log "Update splunk universal forwarder binaries"
+      "$WEBTRACKING_HOME/splunkforwarder/bin/splunk" stop
+      tar xaf "$WEBTRACKING_HOME/update/splunkforwarder.tgz" -C "$WEBTRACKING_HOME"
+      "$WEBTRACKING_HOME/splunkforwarder/bin/splunk" start --accept-license --answer-yes --no-prompt
+      find -L "$WEBTRACKING_HOME/splunkforwarder" -type l -exec rm -v {} \;
+      rm -f "$WEBTRACKING_HOME/update/splunkforwarder.tgz"
+      "$WEBTRACKING_HOME/splunkforwarder/bin/splunk" --version | tail -1 || true
+    fi
+    
+    # Update webtracking
+    if [[ "$UPDATE_WEBTRACKING" == true && -f "$WEBTRACKING_HOME/update/webtracking-bin.zip" ]]
+    then
+      # Stop all webtracking services
+      log "Stopping webtracking services"
+      for conf_file in "$IHS_CONF_DIR"/webtracking*.conf
+      do
+        if [[ -f "$conf_file" ]]
+        then
+            apachectl_to_run=$(get_apachectl_for_conf "$conf_file")
+            if [[ -n "$apachectl_to_run" ]]
+            then
+              while IFS= read -r apachectl_path; do
+                log "$conf_file: $apachectl_path stop"
+                "$apachectl_path" stop || true
+              done <<EOF
+  $apachectl_to_run
+  EOF
+            fi
+        fi
+      done
+      
+      # Update webtracking binaries
+      log "Update webtracking binaries"
+      unzip -uo "$WEBTRACKING_HOME/update/webtracking-bin.zip" -d "$(dirname "$WEBTRACKING_HOME")"
+      rm -f "$WEBTRACKING_HOME/update/webtracking-bin.zip"
+      cat "$WEBTRACKING_HOME/bin/version.txt"
+      
+      # Start all webtracking services
+      log "Starting webtracking services"
+      for conf_file in "$IHS_CONF_DIR"/webtracking*.conf
+      do
+        if [[ -f "$conf_file" ]]
+        then
           apachectl_to_run=$(get_apachectl_for_conf "$conf_file")
           if [[ -n "$apachectl_to_run" ]]
           then
             while IFS= read -r apachectl_path; do
-              log "$conf_file: $apachectl_path stop"
-              "$apachectl_path" stop || true
+              log "$conf_file: $apachectl_path start"
+              "$apachectl_path" start || true
+              "$apachectl_path" status || true
             done <<EOF
 $apachectl_to_run
 EOF
           fi
-      fi
-    done
-    
-    # Update webtracking binaries
-    log "Update webtracking binaries"
-    unzip -uo "$WEBTRACKING_HOME/update/webtracking-bin.zip" -d "$(dirname "$WEBTRACKING_HOME")"
-    rm -f "$WEBTRACKING_HOME/update/webtracking-bin.zip"
-    cat "$WEBTRACKING_HOME/bin/version.txt"
-    
-    # Start all webtracking services
-    log "Starting webtracking services"
-    for conf_file in "$IHS_CONF_DIR"/webtracking*.conf
-    do
-      if [[ -f "$conf_file" ]]
-      then
-        apachectl_to_run=$(get_apachectl_for_conf "$conf_file")
-        if [[ -n "$apachectl_to_run" ]]
-        then
-          while IFS= read -r apachectl_path; do
-            log "$conf_file: $apachectl_path start"
-            "$apachectl_path" start || true
-            "$apachectl_path" status || true
-          done <<EOF
-$apachectl_to_run
-EOF
         fi
-      fi
-    done
-    
-    log "Add check.sh to crontab if not already present"
-    (crontab -l 2>/dev/null | grep -q "/webtracking/bin/check.sh") || \
-    (crontab -l 2>/dev/null; \
-    crontab -l 2>/dev/null | grep -q . && echo ""; \
-    echo "# Check splunkd process and stale files"; \
-    echo "*/15 * * * * /webtracking/bin/check.sh") | \
-    crontab -
-    crontab -l | grep -B1 "/webtracking/bin/check.sh"
+      done
+      
+      log "Add check.sh to crontab if not already present"
+      (crontab -l 2>/dev/null | grep -q "/webtracking/bin/check.sh") || \
+      (crontab -l 2>/dev/null; \
+      crontab -l 2>/dev/null | grep -q . && echo ""; \
+      echo "# Check splunkd process and stale files"; \
+      echo "*/15 * * * * /webtracking/bin/check.sh") | \
+      crontab -
+      crontab -l | grep -B1 "/webtracking/bin/check.sh"
+    fi
+  else
+    log "ERROR: The folder $WEBTRACKING_HOME does not exist"
+    exit 1
   fi
-else
-  log "ERROR: The folder $WEBTRACKING_HOME does not exist"
-  exit 1
 fi
 
 if [[ $SETUP == false ]]

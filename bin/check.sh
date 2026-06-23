@@ -13,7 +13,7 @@
 # 3 - Splunk restart failed
 
 # Version
-VERSION=2026.6.5.1
+VERSION=2026.6.18.1
 
 #!/usr/bin/env bash
 set -euo pipefail
@@ -111,12 +111,18 @@ then
    
    # Command to restart splunk
    SPLUNK_RESTART_CMD=(systemctl restart SplunkForwarder)
+
+   # User
+   SPLUNK_USER="apache"
 else
    # Command to stop splunk (used before update)
    SPLUNK_STOP_CMD=("$WEBTRACKING_HOME/splunkforwarder/bin/splunk" stop --answer-yes --no-prompt)
 
    # Command to restart splunk
    SPLUNK_RESTART_CMD=("$WEBTRACKING_HOME/splunkforwarder/bin/splunk" restart --answer-yes --no-prompt)
+
+   # User
+   SPLUNK_USER=$WEBTRACKING_OWNER
 fi
 
 if [[ "$(whoami)" != "$WEBTRACKING_OWNER" ]]
@@ -158,9 +164,23 @@ then
    log "Update splunkforwarder binaries"
    "${SPLUNK_STOP_CMD[@]}"
    tar xaf "$WEBTRACKING_HOME/update/splunkforwarder.tgz" -C "$WEBTRACKING_HOME"
-   "$WEBTRACKING_HOME/splunkforwarder/bin/splunk" start --accept-license --answer-yes --no-prompt
+   chown -R $SPLUNK_USER:$SPLUNK_USER $WEBTRACKING_HOME/splunkforwarder
+   if [ "$WEBTRACKING_OWNER" = "root" ]
+   then
+      $WEBTRACKING_HOME/splunkforwarder/bin/splunk disable boot-start -user $SPLUNK_USER -systemd-managed 1
+      sudo -u $SPLUNK_USER "$WEBTRACKING_HOME/splunkforwarder/bin/splunk" start --accept-license --answer-yes --no-prompt
+   else
+      "$WEBTRACKING_HOME/splunkforwarder/bin/splunk" start --accept-license --answer-yes --no-prompt
+   fi
    find -L "$WEBTRACKING_HOME/splunkforwarder" -type l -exec rm -v {} \;
    rm -f "$WEBTRACKING_HOME/update/splunkforwarder.tgz"
+   if [ "$WEBTRACKING_OWNER" = "root" ]
+   then
+      sleep 10
+      sudo -u $SPLUNK_USER $WEBTRACKING_HOME/splunkforwarder/bin/splunk stop
+      $WEBTRACKING_HOME/splunkforwarder/bin/splunk enable boot-start -user $SPLUNK_USER -systemd-managed 1
+      systemctl daemon-reload
+   fi
 fi
 
 if is_splunkd_running

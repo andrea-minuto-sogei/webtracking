@@ -2,6 +2,8 @@
 
 /*
  * VERSION       DATE        DESCRIPTION
+ * 2026.6.22.1  2026-06-22   Remove latest fix from input filter
+ *                           Change method to signal an EOS for output_filter
  * 2026.6.16.1  2026-06-16   Fix filters to manage buckets with zero bytes as an EOS bucket
  * 2026.5.28.1  2026-05-28   Fix record files and folders management
  *                           Remove non-root user constraint
@@ -208,7 +210,7 @@ APLOG_USE_MODULE(web_tracking);
 #endif
 
 // version
-const char *version = "Web Tracking Apache Module 2026.6.16.1 (C17/C++23)";
+const char *version = "Web Tracking Apache Module 2026.6.22.1 (C17/C++23)";
 
 wt_counter_t *wt_counter = 0;
 static apr_shm_t *shm_counter = 0;
