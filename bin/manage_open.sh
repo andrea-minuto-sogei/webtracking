@@ -1,6 +1,10 @@
 #!/bin/bash
 set -euo pipefail
 
+# Authors: 
+#    Andrea Minuto
+#    GitHub Copilot
+
 # How to run:
 # curl http://mdwservizio01.srv.sogei.it/WebTracking/manage_open.sh -o manage_open.sh
 # sh manage_open.sh --setup | tee manage.log
@@ -10,7 +14,7 @@ set -euo pipefail
 # rm manage_open.sh
 
 # Version
-VERSION="2026.6.18.1"
+VERSION="2026.6.26.1"
 
 # Variables
 WEBTRACKING_HOME="/webtracking"
@@ -32,13 +36,13 @@ usage()
    cat << EOF
 Usage: $(basename "$0") [OPTIONS]
 
-OPTIONS:
-   --setup          Setup WebTracking with Splunk forwarder
-   --update         Update Splunk forwarder binaries
+Options:
+   --setup          Setup WebTracking and Splunk Universal Forwarder
+   --update         Update WebTracking and Splunk Universal Forwarder
    -h, --help       Display this help message
    -v, --version    Display version information
 
-EXAMPLES:
+Example usage:
    sh $(basename "$0") --setup
    sh $(basename "$0") --update
    sh $(basename "$0") --help
@@ -70,7 +74,7 @@ setup()
 
    log "VERSION=$VERSION"
    
-   log "Starting WebTracking installation"
+   log "Starting WebTracking and Splunk Universal Forwarder installation"
 
    log "Ensuring $WEBTRACKING_HOME directory exists"
    mkdir -p $WEBTRACKING_HOME
@@ -135,18 +139,18 @@ setup()
    echo 'targetUri = TRASPLMGLP01-03.srv.sogei.it:8089' >> $WEBTRACKING_HOME/splunkforwarder/etc/system/local/deploymentclient.conf
    chown apache:apache $WEBTRACKING_HOME/splunkforwarder/etc/system/local/deploymentclient.conf
 
-   log "Wait 10 seconds and stop Splunk forwarder"
+   log "Wait 10 seconds and stop Splunk Universal Forwarder"
    sleep 10
    sudo -u apache $WEBTRACKING_HOME/splunkforwarder/bin/splunk stop
 
-   log "Enabling boot start for Splunk forwarder"
+   log "Enabling boot start for Splunk Universal Forwarder"
    $WEBTRACKING_HOME/splunkforwarder/bin/splunk enable boot-start -user apache -systemd-managed 1
 
-   log "Reloading systemd daemon and start Splunk forwarder"
+   log "Reloading systemd daemon and start Splunk Universal Forwarder"
    systemctl daemon-reload
    systemctl start SplunkForwarder
 
-   log "Displaying Splunk forwarder version"
+   log "Displaying Splunk Universal Forwarder version"
    $WEBTRACKING_HOME/splunkforwarder/bin/splunk --version | tail -1 || true
 
    log "Add check.sh to crontab if not already present"
@@ -179,7 +183,7 @@ update()
 
    log "VERSION=$VERSION"
 
-   log "Starting WebTracking update"
+   log "Starting WebTracking and Splunk Universal Forwarder update"
 
    log "Stopping Apache web server to release log files"
    systemctl stop httpd
@@ -199,24 +203,24 @@ update()
    log "Starting Apache web server"
    systemctl start httpd
    
-   log "Starting Splunk forwarder update"
+   log "Starting Splunk Universal Forwarder update"
 
-   log "Downloading Splunk forwarder"
+   log "Downloading Splunk Universal Forwarder"
    curl http://mdwservizio01.srv.sogei.it/WebTracking/splunkforwarder.tgz -o splunkforwarder.tgz
 
-   log "Stopping Splunk forwarder"
+   log "Stopping Splunk Universal Forwarder"
    systemctl stop SplunkForwarder
    
-   log "Extracting new Splunk forwarder binaries"
+   log "Extracting new Splunk Universal Forwarder binaries"
    tar xaf splunkforwarder.tgz -C "$WEBTRACKING_HOME"
 
-   log "Setting ownership and permissions for Splunk forwarder"
+   log "Setting ownership and permissions for Splunk Universal Forwarder"
    chown -R apache:apache $WEBTRACKING_HOME/splunkforwarder
 
-   log "Disabling boot start for Splunk forwarder"
+   log "Disabling boot start for Splunk Universal Forwarder"
    $WEBTRACKING_HOME/splunkforwarder/bin/splunk disable boot-start -user apache -systemd-managed 1
    
-   log "Starting Splunk forwarder"
+   log "Starting Splunk Universal Forwarder to apply the update"
    sudo -u apache $WEBTRACKING_HOME/splunkforwarder/bin/splunk start --accept-license --answer-yes --no-prompt
    
    log "Cleaning up symbolic links"
@@ -225,18 +229,18 @@ update()
    log "Removing update archive"
    rm -f splunkforwarder.tgz
 
-   log "Wait 10 seconds and stop Splunk forwarder"
+   log "Wait 10 seconds and stop Splunk Universal Forwarder"
    sleep 10
    sudo -u apache $WEBTRACKING_HOME/splunkforwarder/bin/splunk stop
 
-   log "Enabling boot start for Splunk forwarder"
+   log "Enabling boot start for Splunk Universal Forwarder"
    $WEBTRACKING_HOME/splunkforwarder/bin/splunk enable boot-start -user apache -systemd-managed 1
 
-   log "Reloading systemd daemon and start Splunk forwarder"
+   log "Reloading systemd daemon and start Splunk Universal Forwarder"
    systemctl daemon-reload
    systemctl start SplunkForwarder
 
-   log "Displaying Splunk forwarder version"
+   log "Displaying Splunk Universal Forwarder version"
    $WEBTRACKING_HOME/splunkforwarder/bin/splunk --version | tail -1 || true
 
    log "Update phase completed successfully"
@@ -248,20 +252,16 @@ main()
    
    case "$command" in
       --setup)
-         log "Executing setup operation"
          setup
          ;;
       --update)
-         log "Executing update operation"
          update
          ;;
       -h|--help)
-         log "Displaying help information"
          usage
          exit 0
          ;;
       -v|--version)
-         log "Displaying version information"
          version
          exit 0
          ;;

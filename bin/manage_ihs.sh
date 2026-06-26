@@ -5,16 +5,6 @@
 #    GitHub Copilot
 #    IBM Bob
 
-# This script sets up or updates the WebTracking binaries and the Splunk Universal Forwarder.
-# It performs the following steps:
-# 1. Checks if the script is run as the webihs user.
-# 2. Verifies the existence of the /webtracking directory.
-# 3. Downloads the latest Splunk forwarder and WebTracking binaries.
-# 4. Updates the apachectl files in the IHS bin directory.
-# 5. Stops all WebTracking services.
-# 6. Updates the Splunk forwarder and WebTracking binaries.
-# 7. Restarts all WebTracking services.
-
 # How to run:
 # curl http://mdwservizio01.srv.sogei.it/WebTracking/manage_ihs.sh -o manage_ihs.sh
 # sh manage_ihs.sh --all | tee manage.log
@@ -30,7 +20,7 @@
 # IHS_CONFIGURATION_FILE=/prod/IBM/HTTPServer/conf.d/httpd_<service>.conf
 
 # Version
-VERSION=2026.6.22.1
+VERSION=2026.6.26.1
 
 version()
 {
@@ -104,31 +94,6 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-# If help, print help and exit
-if [[ "$SHOW_HELP" == true ]]
-then
-  echo "Usage: $(basename "$0") [OPTIONS]"
-  echo ""
-  echo "Options:"
-  echo "  --splunkforwarder    Update the Splunk Universal Forwarder"
-  echo "  --webtracking        Update the binaries of the web_tracking module"
-  echo "  --template           Update the Apache apachectl template"
-  echo "  --all                Perform all updates (equivalent to --splunkforwarder --webtracking --template)"
-  echo "  --setup              Perform initial setup (create folders, add cron jobs, etc.)"
-  echo "  -h, --help           Print this help message"
-  echo "  -v, --version        Print the version number"
-  echo ""
-  echo "If no options are provided, print help and exit."
-  exit 0
-fi
-
-# If version, print version and exit
-if [[ "$SHOW_VERSION" == true ]]
-then
-  version
-  exit 0
-fi
-
 # Set variables
 IHS_OWNER="webihs"
 WEBTRACKING_HOME="/webtracking"
@@ -138,6 +103,55 @@ IHS_CONF_DIR="$IHS_HOME/conf.d"
 DOWNLOAD_URL="http://mdwservizio01.srv.sogei.it/WebTracking"
 SPLUNKFORWARDER_URL="$DOWNLOAD_URL/splunkforwarder.tgz"
 WEBTRACKING_BIN_URL="$DOWNLOAD_URL/webtracking-bin.zip"
+
+# If help, print help and exit
+if [[ "$SHOW_HELP" == true ]]
+then
+  cat <<EOF
+Usage: $(basename "$0") [OPTIONS]
+
+Options:
+  --splunkforwarder    Update the Splunk Universal Forwarder
+  --webtracking        Update the binaries of the web_tracking module
+  --template           Update the Apache apachectl template
+  --all                Perform all updates (equivalent to --splunkforwarder --webtracking --template)
+  --setup              Perform initial setup (create folders, add cron jobs, etc.)
+  -h, --help           Print this help message
+  -v, --version        Print the version number
+
+If no options are provided, print help and exit.
+
+Example usage:
+  sh $(basename "$0") --all | tee manage.log
+  sh $(basename "$0") --splunkforwarder --webtracking --template | tee manage.log
+  sh $(basename "$0") --setup | tee manage.log
+  sh $(basename "$0") --help
+  sh $(basename "$0") --version
+
+Note:
+  If there are apachectl?* scripts not built using the apachectl_template,
+  it is strongly recommended to create for each service a fake apachectl_<service> file 
+  with just one line: IHS_CONFIGURATION_FILE=${IHS_HOME}/conf/<httpd_conf>.conf
+  Where <httpd_conf> is the name of the corresponding httpd configuration file.
+
+  For example, if the httpd configuration file is httpd_myservice.conf,
+  create an apachectl_myservice file that contains the line:
+  IHS_CONFIGURATION_FILE=${IHS_HOME}/conf/httpd_myservice.conf
+
+  Alternatively and when for a service there is no existing apachectl?* script,
+  it is possible to create a symbolic link to the corresponding apachectl-like script:
+  ln -s ${IHS_HOME}/bin/myservice_ctl ${IHS_HOME}/bin/apachectl_myservice
+EOF
+
+  exit 0
+fi
+
+# If version, print version and exit
+if [[ "$SHOW_VERSION" == true ]]
+then
+  version
+  exit 0
+fi
 
 # Get apachectl files that match the given conf file (may be multiple)
 get_apachectl_for_conf()
@@ -163,11 +177,15 @@ then
   exit 1
 fi
 
-if [[ $SETUP == false ]]
+# Print version
+log "VERSION=$VERSION"
+
+# If setup, print setup message, else print update message
+if [[ $SETUP == true ]]
 then
-  log "WebTracking Update Script Version: $VERSION"
+  log "Starting setup process"
 else
-  log "WebTracking Setup Script Version: $VERSION"
+  log "Starting update process"
 fi
 
 if [[ "$UPDATE_TEMPLATE" == true || "$SETUP" == true ]]
@@ -180,11 +198,11 @@ fi
 if [[ ("$UPDATE_TEMPLATE" == true || "$SETUP" == true) && -f "apachectl_template" ]]
 then
   log "Updating apachectl files"
-  for apachectl_file in "$IHS_BIN_DIR"/apachectl*
+  for apachectl_file in "$IHS_BIN_DIR"/apachectl?*
   do
     if [[ -f "$apachectl_file" ]] && grep -q "^IHS_CONFIGURATION_FILE" "$apachectl_file"
     then
-      log "Updating $apachectl_file"
+      log "Updating template for $apachectl_file"
 
       # Store the line beginning with IHS_CONFIGURATION_FILE
       ACTUAL_CONF_FILE=$(grep "^IHS_CONFIGURATION_FILE" "$apachectl_file")
@@ -195,7 +213,7 @@ then
       # Set execute permissions         
       chmod +x "$apachectl_file"
       
-      # Add back the original IHS_CONFIGURATION_FILE line
+      # Add the original IHS_CONFIGURATION_FILE line
       sed -i "/^IHS_CONFIGURATION_FILE/c\\$ACTUAL_CONF_FILE" "$apachectl_file"
 
       # version
@@ -203,6 +221,34 @@ then
 
       # status
       "$apachectl_file" status || true
+    else
+      log "Installing new apachectl template for $apachectl_file if it will find a corresponding conf file"
+
+      # Search the corresponding conf file for this apachectl file
+      local conf_file=$(grep -Po "^[^#]+\s*\K$IHS_HOME/conf/\S+\.conf" "$apachectl_file" 2>/dev/null | head -1)
+      if [[ -n "$conf_file" && -f "$conf_file" ]]
+      then
+        # Print the conf file being used
+        log "Found corresponding conf file for $apachectl_file: $conf_file"
+
+        # Replace old file with the content of apachectl_template
+        cp -p "apachectl_template" "$apachectl_file"
+        
+        # Set IHS_CONFIGURATION_FILE line
+        sed -i "/^IHS_CONFIGURATION_FILE/c\\IHS_CONFIGURATION_FILE=$conf_file" "$apachectl_file"
+
+        # Set execute permissions
+        chmod +x "$apachectl_file"
+
+        # version
+        "$apachectl_file" --version | head -1 || true
+
+        # status
+        "$apachectl_file" status || true
+      else
+        log "ERROR: Could not find a corresponding conf file for $apachectl_file."
+        exit 1
+      fi
     fi
   done
   
@@ -298,8 +344,8 @@ then
                 log "$conf_file: $apachectl_path stop"
                 "$apachectl_path" stop || true
               done <<EOF
-  $apachectl_to_run
-  EOF
+$apachectl_to_run
+EOF
             fi
         fi
       done
@@ -345,9 +391,9 @@ EOF
   fi
 fi
 
-if [[ $SETUP == false ]]
+if [[ $SETUP == true ]]
 then
-  log "WebTracking update process completed"
+  log "Setup process completed"
 else
-  log "WebTracking setup process completed"
+  log "Update process completed"
 fi
