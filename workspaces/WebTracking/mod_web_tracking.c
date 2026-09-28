@@ -2,6 +2,8 @@
 
 /*
  * VERSION       DATE        DESCRIPTION
+ * 2026.9.22.1  2026-09-22   Add directive WebTrackingExcludeMethod
+ *                           Add directive WebTrackingExcludeStatusCode
  * 2026.6.26.1  2026-06-26   Extract EOS operations outside output filter function 
  * 2026.6.22.1  2026-06-22   Remove latest fix from input filter
  *                           Change method to signal an EOS for the output filter
@@ -211,7 +213,7 @@ APLOG_USE_MODULE(web_tracking);
 #endif
 
 // version
-const char *version = "Web Tracking Apache Module 2026.6.26.1 (C17/C++23)";
+const char *version = "Web Tracking Apache Module 2026.9.22.1 (C17/C++23)";
 
 wt_counter_t *wt_counter = 0;
 static apr_shm_t *shm_counter = 0;
@@ -258,11 +260,13 @@ static void *create_server_config(apr_pool_t *p, server_rec *s)
    conf->envvar_set = value_set_allocate();
    conf->request_header_set = value_set_allocate();
    conf->exclude_parameter_set = value_set_allocate();
+   conf->exclude_method_set = value_set_allocate();
    conf->exact_uri_set = value_set_allocate();
    conf->starts_with_uri_set = value_set_allocate();
    conf->exclude_exact_uri_set = value_set_allocate();
    conf->exclude_starts_with_uri_set = value_set_allocate();
    conf->exact_host_set = value_set_allocate();
+   conf->exclude_status_code_set = value_iset_allocate();
 
    apr_atomic_set32(&conf->requests, 0);
    apr_atomic_set32(&conf->responses, 0);
@@ -747,6 +751,25 @@ static const char *wt_tracking_exclude_form_parameter(cmd_parms *cmd, void *dumm
    return OK;
 }
 
+static const char *wt_tracking_exclude_method(cmd_parms *cmd, void *dummy, const char *method)
+{
+   wt_config_t *conf = ap_get_module_config(cmd->server->module_config, &web_tracking_module);
+
+   value_set_add(conf->exclude_method_set, method);
+
+   return OK;
+}
+
+static const char *wt_tracking_exclude_status_code(cmd_parms *cmd, void *dummy, const char *status_code)
+{
+   wt_config_t *conf = ap_get_module_config(cmd->server->module_config, &web_tracking_module);
+
+   unsigned int i = atoi(status_code);
+   value_iset_add(conf->exclude_status_code_set, i);
+
+   return OK;
+}
+
 static const char *wt_tracking_host(cmd_parms *cmd, void *dummy, const char *host_pcre)
 {
    wt_config_t *conf = ap_get_module_config(cmd->server->module_config, &web_tracking_module);
@@ -935,6 +958,7 @@ static apr_status_t child_exit(void *data)
    value_set_delete(conf->exclude_exact_uri_set);
    value_set_delete(conf->exclude_starts_with_uri_set);
    value_set_delete(conf->exact_host_set);
+   value_iset_delete(conf->exclude_status_code_set);
 
    // initialization is skipped if tracking is disabled
    if (!conf->disable)
@@ -1147,6 +1171,8 @@ static int post_config(apr_pool_t *pconf, apr_pool_t *plog, apr_pool_t *ptemp, s
       print_value_set(s, conf->header_value_set, apr_psprintf(ptemp, "web_tracking_module: [%d] exclude header-value", pid));
       print_value_set(s, conf->exclude_cookie_set, apr_psprintf(ptemp, "web_tracking_module: [%d] exclude cookie", pid));
       print_value_set(s, conf->exclude_parameter_set, apr_psprintf(ptemp, "web_tracking_module: [%d] exclude form parameter", pid));
+      print_value_set(s, conf->exclude_method_set, apr_psprintf(ptemp, "web_tracking_module: [%d] exclude method", pid));
+      print_value_iset(s, conf->exclude_status_code_set, apr_psprintf(ptemp, "web_tracking_module: [%d] exclude status code", pid));
       print_value_set(s, conf->envvar_set, apr_psprintf(ptemp, "web_tracking_module: [%d] print environment variable", pid));
       print_value_set(s, conf->request_header_set, apr_psprintf(ptemp, "web_tracking_module: [%d] print request header", pid));
       if (APLOG_IS_LEVEL(s, APLOG_INFO) && conf->appid_header)
@@ -1449,6 +1475,8 @@ static const command_rec config_cmds[] =
    AP_INIT_ITERATE("WebTrackingExcludeHeaderValue", wt_tracking_exclude_header_value, NULL, RSRC_CONF, "WebTrackingExcludeHeaderValue {<string>}+"),
    AP_INIT_ITERATE("WebTrackingExcludeCookie", wt_tracking_exclude_cookie, NULL, RSRC_CONF, "WebTrackingExcludeCookie {<string>}+"),
    AP_INIT_ITERATE("WebTrackingExcludeFormParameter", wt_tracking_exclude_form_parameter, NULL, RSRC_CONF, "WebTrackingExcludeFormParameter {<string>}+"),
+   AP_INIT_TAKE1("WebTrackingExcludeMethod", wt_tracking_exclude_method, NULL, RSRC_CONF, "WebTrackingExcludeMethod <string>"),
+   AP_INIT_TAKE1("WebTrackingExcludeStatusCode", wt_tracking_exclude_status_code, NULL, RSRC_CONF, "WebTrackingExcludeStatusCode <integer>"),
    AP_INIT_ITERATE("WebTrackingExactHost", wt_tracking_exact_host, NULL, RSRC_CONF, "WebTrackingExactHost {<string}+"),
    AP_INIT_ITERATE("WebTrackingHost", wt_tracking_host, NULL, RSRC_CONF, "WebTrackingHost <PCRE>"),
    AP_INIT_ITERATE("WebTrackingContentType", wt_tracking_content_type, NULL, RSRC_CONF, "WebTrackingContentType <PCRE>"),
@@ -1627,6 +1655,24 @@ static void print_value_set(server_rec *s, void *set, const char *prefix)
          {
             for (int i = 0; i < length; ++i) ap_log_error(APLOG_MARK, APLOG_INFO, 0, s, "%s value = %s", prefix, array[i]);
             value_set_delete_array(array);
+         }
+      }
+   }
+}
+
+static void print_value_iset(server_rec *s, void *set, const char *prefix)
+{
+   if (set)
+   {
+      if (APLOG_IS_LEVEL(s, APLOG_INFO))
+      {
+         unsigned long length = 0;
+         unsigned int *array = value_iset_to_array(set, &length);
+         
+         if (length)
+         {
+            for (int i = 0; i < length; ++i) ap_log_error(APLOG_MARK, APLOG_INFO, 0, s, "%s value = %d", prefix, array[i]);
+            value_iset_delete_array(array);
          }
       }
    }

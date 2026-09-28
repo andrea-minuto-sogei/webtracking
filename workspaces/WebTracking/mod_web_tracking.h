@@ -99,11 +99,15 @@ struct wt_config_s
    void *header_value_set;
    void *exclude_cookie_set;
    void *exclude_parameter_set;
+   void *exclude_method_set;
    void *exact_uri_set;
    void *starts_with_uri_set;
    void *exclude_exact_uri_set;
    void *exclude_starts_with_uri_set;
    void *exact_host_set;
+   
+   // std::set<unsigned int>
+   void *exclude_status_code_set;
 
    const char *record_folder;
    const char *record_archive_folder;
@@ -149,6 +153,7 @@ static uri_table_t *add_uri_entry(apr_pool_t *, uri_table_t *, const char *, con
 static void print_uri_table(server_rec *, uri_table_t *, const char *);
 static const uri_table_t *get_uri_table(uri_table_t *, const char *, const char *);
 static void print_value_set(server_rec *, void *, const char *);
+static void print_value_iset(server_rec *, void *, const char *);
 static header_table_t *add_header_entry(apr_pool_t *, header_table_t *, const char *, const char *, ap_regex_t *);
 static void print_header_table(server_rec *, header_table_t *, const char *);
 

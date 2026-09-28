@@ -23,6 +23,14 @@ unsigned int value_set_size(void *set);
 const char **value_set_to_array(void *set, unsigned long *length);
 void value_set_delete_array(const char **array);
 
+// std::set<std::unsigned int>
+void *value_iset_allocate();
+void value_iset_delete(void *set);
+void value_iset_add(void *set, unsigned int value);
+unsigned int value_iset_size(void *set);
+unsigned int *value_iset_to_array(void *set, unsigned long *length);
+void value_iset_delete_array(unsigned int *array);
+
 #ifdef __cplusplus
 }
 #endif

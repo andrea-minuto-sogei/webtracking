@@ -6,6 +6,7 @@
 #include <list>
 #include <cstdarg>
 #include <cstring>
+#include <set>
 #include <unordered_set>
 
 namespace
@@ -639,9 +640,14 @@ std::string wt_inflate(const std::string &in, int wrap)
    return plain;
 }
 
+// std::set<std::string>
 using t_set_table = std::unordered_set<std::string>;
 bool value_set_contains(void *set, const char *value);
 const char *value_set_starts_with(void *set, const char *value);
+
+// std::set<unsigned int>
+using t_iset_table = std::set<unsigned int>;
+bool value_iset_contains(void *set, unsigned int value);
 
 int log_headers_cpp(void *rec, const char *key, const char *value)
 {
@@ -996,6 +1002,26 @@ try
                if (APLOG_R_IS_LEVEL(r, request_log_level))
                {
                   ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] found %s disabling header", thread_id, header.c_str());
+                  std::string elapsed{to_string(apr_time_now() - start)};
+                  ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] end (OK) - %s", thread_id, elapsed.c_str());
+               }
+               
+               return OK;
+            }
+         }
+      }
+
+      // check wehther the request method is to be excluded
+      if (conf->exclude_method_set)
+      {
+         t_set_table *local_set = static_cast<t_set_table *>(conf->exclude_method_set);
+         for (const std::string &method: *local_set)
+         {
+            if (!strcasecmp(r->method, method.c_str()))
+            {
+               if (APLOG_R_IS_LEVEL(r, request_log_level))
+               {
+                  ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] request method %s has to be excluded", thread_id, r->method);
                   std::string elapsed{to_string(apr_time_now() - start)};
                   ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "post_read_request(): [%ld] end (OK) - %s", thread_id, elapsed.c_str());
                }
@@ -1729,6 +1755,48 @@ try
       if (APLOG_R_IS_LEVEL(r, request_log_level))
          ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "log_transaction(): [%ld] search for output header that can disable the whole tracking", thread_id);
       
+      
+      // Check if the status code disables tracking
+      if (conf->exclude_status_code_set)
+      {
+         if (value_iset_contains(conf->exclude_status_code_set, r->status))
+         {
+            if (APLOG_R_IS_LEVEL(r, request_log_level))
+                  ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "log_transaction(): [%ld] status code %d disables tracking", thread_id, r->status);
+               
+               // decrement counters
+               apr_atomic_dec32(&conf->requests);
+               if (has_request_body) apr_atomic_dec32(&conf->request_bodies);
+               if (has_response_body) apr_atomic_dec32(&conf->response_bodies);
+               apr_atomic_inc32(&conf->responses);
+               
+               if (wt_counter)
+               {
+                  apr_atomic_dec32(&wt_counter->requests);
+                  if (has_request_body) apr_atomic_dec32(&wt_counter->request_bodies);
+                  if (has_response_body) apr_atomic_dec32(&wt_counter->response_bodies);
+                  apr_atomic_dec32(&wt_counter->responses);
+               }
+
+               if (const char *ce = apr_table_get(r->headers_out, "Content-Encoding");
+                   ce && (!std::strcmp(ce, "deflate") || !std::strcmp(ce, "gzip")))
+               {
+                  apr_atomic_dec32(&conf->response_with_compressed_bodies);
+                  if (wt_counter) apr_atomic_dec32(&wt_counter->response_with_compressed_bodies);
+               }
+               
+               // Exit
+               if (APLOG_R_IS_LEVEL(r, request_log_level))
+               {
+                  std::string elapsed { to_string(apr_time_now() - start) };
+                  ap_log_rerror(APLOG_MARK, request_log_level, 0, r, "log_transaction(): [%ld] end (OK) - %s", thread_id, elapsed.c_str());
+               }
+
+               return OK;
+         }
+      }
+      
+      // Check if there is any response header to disable tracking
       for (header_table_t *table = conf->exclude_response_header_table; table; table = table->next)
       {
          if (APLOG_R_IS_LEVEL(r, request_log_level))
@@ -3286,4 +3354,79 @@ const char *value_set_starts_with(void *set, const char *value)
    }
 
    return nullptr;
+}
+
+extern "C" void *value_iset_allocate()
+{
+   return new t_iset_table {};
+}
+
+extern "C" void value_iset_delete(void *set)
+{
+   if (set)
+   {
+      t_iset_table *local_set = static_cast<t_iset_table *>(set);
+      delete local_set;
+   }
+}
+
+extern "C" void value_iset_add(void *set, unsigned int value)
+{
+   if (set)
+   {
+      t_iset_table *local_set = static_cast<t_iset_table *>(set);
+      local_set->insert(value);
+   }
+}
+
+extern "C" unsigned int value_iset_size(void *set)
+{
+   if (set)
+   {
+      t_iset_table *local_set = static_cast<t_iset_table *>(set);
+      return local_set->size();
+   }
+
+   return 0;
+}
+
+extern "C" unsigned int *value_iset_to_array(void *set, unsigned long *length)
+{
+   if (set)
+   {
+      t_iset_table *local_set = static_cast<t_iset_table *>(set);
+      
+      // empty
+      if (local_set->empty())
+      {
+         *length = 0;
+         return nullptr;
+      }
+      
+      // with values
+      *length = local_set->size();
+      unsigned int *array = new unsigned int[local_set->size()];
+      unsigned int i = 0;
+      for (auto &value : *local_set) array[i++] = value;
+      return array;
+   }
+
+   *length = 0;
+   return nullptr;
+}
+
+extern "C" void value_iset_delete_array(unsigned int *array)
+{
+   if (array) delete [] array;
+}
+
+bool value_iset_contains(void *set, unsigned int value)
+{
+   if (set && value)
+   {
+      t_iset_table *local_set = static_cast<t_iset_table *>(set);
+      return local_set->contains(value);
+   }
+
+   return false;
 }
