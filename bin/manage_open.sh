@@ -9,27 +9,58 @@ set -euo pipefail
 # curl http://mdwservizio01.srv.sogei.it/WebTracking/manage_open.sh -o manage_open.sh
 # sh manage_open.sh --setup | tee manage.log
 # sh manage_open.sh --update | tee manage.log
+# sh manage_open.sh --no-auto-cleanup --setup | tee manage.log
 # sh manage_open.sh --help
 # sh manage_open.sh --version
-# rm manage_open.sh
+
+# Exit on error, unset variable, or pipe failure
+set -euo pipefail
 
 # Version
-VERSION="2026.6.26.1"
+readonly VERSION="2026.9.28.1"
 
 # Variables
-WEBTRACKING_HOME="/webtracking"
+readonly WEBTRACKING_HOME="/webtracking"
 
+# ---------------------------------------------------------------------------
+# log  — writes a timestamped line to stdout.
+# Usage: log "message"
+# Format: [yyyy-MM-dd HH:mm:ss:SSS TZ]: message
+# ---------------------------------------------------------------------------
 log()
 {
-   # Extract hour in 00–23
-   local h=$(date +%H)
-
-   # Milliseconds from nanoseconds
-   local ms=$(date +%N | cut -c1-3)
-
-   # Output matching the format: yyyy-MM-dd HH:mm:ss:SSS z
-   printf '[%s]: %s\n' "$(date +%Y-%m-%d) $h:$(date +%M):$(date +%S):$ms $(date +%Z)" "$*"
+   # Single date call to avoid inconsistent timestamps across sub-invocations
+   local now
+   now=$(date +"%Y-%m-%d %H:%M:%S:%3N %Z")
+   printf '[%s]: %s\n' "${now}" "$*"
 }
+
+# Controls whether the script removes itself after execution
+to_be_perform_cleanup=true
+
+cleanup()
+{
+  local exit_code=${1:-0}
+
+  if [[ "$exit_code" -ne 0 ]]
+  then
+      log "Cleanup skipped: previous command failed with exit code $exit_code"
+      return
+  fi
+
+  log "Cleanup: removing temporary files"
+  rm -f -- "splunkforwarder.tgz"
+  rm -f -- "webtracking-bin.zip"
+  
+  if [[ "$to_be_perform_cleanup" == true ]]
+  then
+    log "Cleanup: removing script $0"
+    rm -f -- "$0"
+  fi
+}
+
+# Call cleanup on exit, passing the exit code so it can skip on failure
+trap 'cleanup "$?"' EXIT
 
 usage()
 {
@@ -37,10 +68,11 @@ usage()
 Usage: $(basename "$0") [OPTIONS]
 
 Options:
-   --setup          Setup WebTracking and Splunk Universal Forwarder
-   --update         Update WebTracking and Splunk Universal Forwarder
-   -h, --help       Display this help message
-   -v, --version    Display version information
+   --setup           Setup WebTracking and Splunk Universal Forwarder
+   --update          Update WebTracking and Splunk Universal Forwarder
+   --no-auto-cleanup Do not remove the script itself after execution
+   -h, --help        Display this help message
+   -v, --version     Display version information
 
 Example usage:
    sh $(basename "$0") --setup
@@ -154,13 +186,21 @@ setup()
    $WEBTRACKING_HOME/splunkforwarder/bin/splunk --version | tail -1 || true
 
    log "Add check.sh to crontab if not already present"
-    (crontab -l 2>/dev/null | grep -q "/webtracking/bin/check.sh") || \
-    (crontab -l 2>/dev/null; \
-    crontab -l 2>/dev/null | grep -q . && echo ""; \
-    echo "# Check splunkd process and stale files"; \
-    echo "*/15 * * * * /webtracking/bin/check.sh") | \
-    crontab -
-    crontab -l | grep -B1 "/webtracking/bin/check.sh"
+   if ! crontab -l 2>/dev/null | grep -F "/webtracking/bin/check.sh" >/dev/null
+   then
+      {
+         crontab -l 2>/dev/null || true
+         crontab -l 2>/dev/null | grep -F . >/dev/null && echo ""
+         echo "# Check splunkd process and stale files"
+         echo "*/15 * * * * /webtracking/bin/check.sh"
+      } | crontab -
+   fi
+
+   if ! crontab -l 2>/dev/null | grep -F -B1 "/webtracking/bin/check.sh"
+   then
+      log "ERROR: Could not verify check.sh crontab entry"
+      exit 1
+   fi
 
    log "Setup phase completed successfully"
 }
@@ -257,21 +297,28 @@ main()
       --update)
          update
          ;;
+      --no-auto-cleanup)
+         to_be_perform_cleanup=false
+         log "Auto cleanup disabled. The script will not remove itself after execution."
+         ;;
       -h|--help)
          usage
+         cleanup_to_be_perform=false
          exit 0
          ;;
       -v|--version)
          version
+         cleanup_to_be_perform=false
          exit 0
          ;;
       "")
          usage
+         cleanup_to_be_perform=false
          exit 1
          ;;
       *)
          log "Error: Unknown option '$command'" >&2
-         usage
+         cleanup_to_be_perform=false
          exit 1
          ;;
    esac

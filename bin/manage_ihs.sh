@@ -10,34 +10,70 @@
 # sh manage_ihs.sh --all | tee manage.log
 # sh manage_ihs.sh --splunkforwarder --webtracking --template | tee manage.log
 # sh manage_ihs.sh --setup | tee manage.log
+# sh manage_ihs.sh --no-auto-cleanup --setup | tee manage.log
 # sh manage_ihs.sh --help
 # sh manage_ihs.sh --version
-# rm manage_ihs.sh
 
-# Note
-# If no apachectl* file is built using the apachectl_template, 
-# it is necessary to create a fake apachectl_<service> file with just one line
-# IHS_CONFIGURATION_FILE=/prod/IBM/HTTPServer/conf.d/httpd_<service>.conf
+# Exit on error, unset variable, or pipe failure
+set -euo pipefail
 
 # Version
-VERSION=2026.6.26.1
+readonly VERSION=2026.9.28.1
+
+# Set variables
+readonly IHS_OWNER="webihs"
+readonly WEBTRACKING_HOME="/webtracking"
+readonly IHS_HOME="/prod/IBM/HTTPServer"
+readonly IHS_BIN_DIR="$IHS_HOME/bin"
+readonly IHS_CONF_DIR="$IHS_HOME/conf.d"
+readonly DOWNLOAD_URL="http://mdwservizio01.srv.sogei.it/WebTracking"
+readonly SPLUNKFORWARDER_URL="$DOWNLOAD_URL/splunkforwarder.tgz"
+readonly WEBTRACKING_BIN_URL="$DOWNLOAD_URL/webtracking-bin.zip"
+
+# ---------------------------------------------------------------------------
+# log  — writes a timestamped line to stdout.
+# Usage: log "message"
+# Format: [yyyy-MM-dd HH:mm:ss:SSS TZ]: message
+# ---------------------------------------------------------------------------
+log()
+{
+   # Single date call to avoid inconsistent timestamps across sub-invocations
+   local now
+   now=$(date +"%Y-%m-%d %H:%M:%S:%3N %Z")
+   printf '[%s]: %s\n' "${now}" "$*"
+}
+
+# Controls whether the script removes itself after execution
+to_be_perform_cleanup=true
+
+cleanup()
+{
+  local exit_code=${1:-0}
+
+  if [[ "$exit_code" -ne 0 ]]
+  then
+      log "Cleanup skipped: previous command failed with exit code $exit_code"
+      return
+  fi
+
+  log "Cleanup: removing temporary files"
+  rm -f -- "$WEBTRACKING_HOME/update/splunkforwarder.tgz"
+  rm -f -- "$WEBTRACKING_HOME/update/webtracking-bin.zip"
+  rm -f -- "${HOME}/apachectl_template"
+  
+  if [[ "$to_be_perform_cleanup" == true ]]
+  then
+    log "Cleanup: removing script $0"
+    rm -f -- "$0"
+  fi
+}
+
+# Call cleanup on exit, passing the exit code so it can skip on failure
+trap 'cleanup "$?"' EXIT
 
 version()
 {
    echo "$(basename "$0") version $VERSION"
-}
-
-# log function
-log()
-{
-   # Extract hour in 00–23
-   local h=$(date +%H)
-
-   # Milliseconds from nanoseconds
-   local ms=$(date +%N | cut -c1-3)
-
-   # Output matching the format: yyyy-MM-dd HH:mm:ss:SSS z
-   printf '[%s]: %s\n' "$(date +%Y-%m-%d) $h:$(date +%M):$(date +%S):$ms $(date +%Z)" "$*"
 }
 
 # Default behavior: if no options, print help and exit
@@ -78,31 +114,30 @@ while [[ $# -gt 0 ]]; do
       SHOW_HELP=false
       shift
       ;;
+    --no-auto-cleanup)
+      to_be_perform_cleanup=false
+      log "Auto cleanup disabled. The script will not remove itself after execution."
+      shift
+      ;;
     -h|--help)
       SHOW_HELP=true
+      cleanup_to_be_perform=false
       shift
       ;;
     -v|--version)
       SHOW_VERSION=true
       SHOW_HELP=false
+      cleanup_to_be_perform=false
       shift
       ;;
     *)
       echo "Unknown option: $1"
+      cleanup_to_be_perform=false
       exit 1
       ;;
   esac
 done
 
-# Set variables
-IHS_OWNER="webihs"
-WEBTRACKING_HOME="/webtracking"
-IHS_HOME="/prod/IBM/HTTPServer"
-IHS_BIN_DIR="$IHS_HOME/bin"
-IHS_CONF_DIR="$IHS_HOME/conf.d"
-DOWNLOAD_URL="http://mdwservizio01.srv.sogei.it/WebTracking"
-SPLUNKFORWARDER_URL="$DOWNLOAD_URL/splunkforwarder.tgz"
-WEBTRACKING_BIN_URL="$DOWNLOAD_URL/webtracking-bin.zip"
 
 # If help, print help and exit
 if [[ "$SHOW_HELP" == true ]]
@@ -116,6 +151,7 @@ Options:
   --template           Update the Apache apachectl template
   --all                Perform all updates (equivalent to --splunkforwarder --webtracking --template)
   --setup              Perform initial setup (create folders, add cron jobs, etc.)
+  --no-auto-cleanup    Do not remove the script itself after execution
   -h, --help           Print this help message
   -v, --version        Print the version number
 
@@ -170,7 +206,7 @@ get_apachectl_for_conf()
    done | sort -u
 }
 
-# Check whether the current user is webihs
+# Check whether the current user is IHS_OWNER, if not, exit with error
 if [[ "$(whoami)" != "$IHS_OWNER" ]]
 then
   log "ERROR: The command was launched as the user $(whoami) and must have been run as the $IHS_OWNER user"
@@ -188,16 +224,48 @@ else
   log "Starting update process"
 fi
 
+# Check prerequisites
+if [[ "$SETUP" == true ]]
+then
+  if [[ ! -d "$IHS_HOME" ]]
+  then
+    log "ERROR: The folder $IHS_HOME does not exist"
+    exit 1
+  fi
+
+  # The owner of the IHS_HOME directory must be IHS_OWNER
+  IHS_OWNER_ACTUAL=$(stat -c '%U' "$IHS_HOME")
+  if [[ "$IHS_OWNER_ACTUAL" != "$IHS_OWNER" ]]
+  then
+    log "ERROR: The owner of the $IHS_HOME directory is $IHS_OWNER_ACTUAL and must be $IHS_OWNER"
+    exit 1
+  fi
+
+  if [[ ! -d "$WEBTRACKING_HOME" ]]
+  then
+    log "ERROR: The folder $WEBTRACKING_HOME does not exist"
+    exit 1
+  fi
+
+  # The owner of the WEBTRACKING_HOME directory must be IHS_OWNER
+  WEBTRACKING_ACTUAL_OWNER=$(stat -c '%U' "$WEBTRACKING_HOME")
+  if [[ "$WEBTRACKING_ACTUAL_OWNER" != "$IHS_OWNER" ]]
+  then
+    log "ERROR: The owner of the $WEBTRACKING_HOME directory is $WEBTRACKING_ACTUAL_OWNER and must be $IHS_OWNER"
+    exit 1
+  fi
+fi
+
 if [[ "$UPDATE_TEMPLATE" == true || "$SETUP" == true ]]
 then
   log "Downloading apachectl_template"
-  curl "$DOWNLOAD_URL/apachectl_template" -o "apachectl_template"
+  curl "$DOWNLOAD_URL/apachectl_template" -o "${HOME}/apachectl_template"
 fi
 
 # Update apachectl files in IHS_BIN_DIR
-if [[ ("$UPDATE_TEMPLATE" == true || "$SETUP" == true) && -f "apachectl_template" ]]
+if [[ ("$UPDATE_TEMPLATE" == true || "$SETUP" == true) && -f "${HOME}/apachectl_template" ]]
 then
-  log "Updating apachectl files"
+  log "Updating or installing apachectl files"
   for apachectl_file in "$IHS_BIN_DIR"/apachectl?*
   do
     if [[ -f "$apachectl_file" ]] && grep -q "^IHS_CONFIGURATION_FILE" "$apachectl_file"
@@ -208,7 +276,7 @@ then
       ACTUAL_CONF_FILE=$(grep "^IHS_CONFIGURATION_FILE" "$apachectl_file")
       
       # Replace the file with the content of apachectl_template
-      cp -p "apachectl_template" "$apachectl_file"
+      cp -p "${HOME}/apachectl_template" "$apachectl_file"
 
       # Set execute permissions         
       chmod +x "$apachectl_file"
@@ -225,14 +293,14 @@ then
       log "Installing new apachectl template for $apachectl_file if it will find a corresponding conf file"
 
       # Search the corresponding conf file for this apachectl file
-      local conf_file=$(grep -Po "^[^#]+\s*\K$IHS_HOME/conf/\S+\.conf" "$apachectl_file" 2>/dev/null | head -1)
+      conf_file=$(grep -Po "^[^#]+\s*\K$IHS_HOME/conf/\S+\.conf" "$apachectl_file" 2>/dev/null | head -1)
       if [[ -n "$conf_file" && -f "$conf_file" ]]
       then
         # Print the conf file being used
         log "Found corresponding conf file for $apachectl_file: $conf_file"
 
         # Replace old file with the content of apachectl_template
-        cp -p "apachectl_template" "$apachectl_file"
+        cp -p "${HOME}/apachectl_template" "$apachectl_file"
         
         # Set IHS_CONFIGURATION_FILE line
         sed -i "/^IHS_CONFIGURATION_FILE/c\\IHS_CONFIGURATION_FILE=$conf_file" "$apachectl_file"
@@ -253,7 +321,7 @@ then
   done
   
   # Remove the apachectl_template
-  rm -f "apachectl_template"
+  rm -f "${HOME}/apachectl_template"
 fi
 
 # Check whether exists the folder /webtracking
@@ -264,10 +332,10 @@ then
     if [[ "$SETUP" == true ]]
     then
       log "Setting up WebTracking environment for the first time"
-      # Create necessary directory
+      # Create necessary conf directory if it doesn't exist (option -p)
       mkdir -p "$IHS_CONF_DIR"
       
-      # Create update directory if it doesn't exist
+      # Create update directory if it doesn't exist  (option -p)
       mkdir -p "$WEBTRACKING_HOME/update"
     fi
     
@@ -288,9 +356,6 @@ then
     if [[ "$SETUP" == true && -f "$WEBTRACKING_HOME/update/splunkforwarder.tgz" && -f "$WEBTRACKING_HOME/update/webtracking-bin.zip" ]]
     then
       log "Setting up WebTracking environment for the first time"
-
-      log "Creating necessary directories"
-      mkdir -p "$IHS_HOME/conf.d"
 
       log "Installing splunk universal forwarder binaries"
       tar xaf "$WEBTRACKING_HOME/update/splunkforwarder.tgz" -C "$WEBTRACKING_HOME"
@@ -314,6 +379,10 @@ then
       unzip -uo "$WEBTRACKING_HOME/update/webtracking-bin.zip" -d "$(dirname "$WEBTRACKING_HOME")"
       rm -f "$WEBTRACKING_HOME/update/webtracking-bin.zip"
       cat "$WEBTRACKING_HOME/bin/version.txt"
+
+      # Reset UPDATE_SPLUNK and UPDATE_WEBTRACKING to false to avoid re-installing them in the next steps
+      UPDATE_SPLUNK=false
+      UPDATE_WEBTRACKING=false
     fi
     
     # Update splunk universal forwarder
@@ -375,15 +444,23 @@ EOF
           fi
         fi
       done
+    fi
       
-      log "Add check.sh to crontab if not already present"
-      (crontab -l 2>/dev/null | grep -q "/webtracking/bin/check.sh") || \
-      (crontab -l 2>/dev/null; \
-      crontab -l 2>/dev/null | grep -q . && echo ""; \
-      echo "# Check splunkd process and stale files"; \
-      echo "*/15 * * * * /webtracking/bin/check.sh") | \
-      crontab -
-      crontab -l | grep -B1 "/webtracking/bin/check.sh"
+    log "Add check.sh to crontab if not already present"
+    if ! crontab -l 2>/dev/null | grep -F "/webtracking/bin/check.sh" >/dev/null
+    then
+        {
+            crontab -l 2>/dev/null || true
+            crontab -l 2>/dev/null | grep -F . >/dev/null && echo ""
+            echo "# Check splunkd process and stale files"
+            echo "*/15 * * * * /webtracking/bin/check.sh"
+        } | crontab -
+    fi
+
+    if ! crontab -l 2>/dev/null | grep -F -B1 "/webtracking/bin/check.sh"
+    then
+        log "ERROR: Could not verify check.sh crontab entry"
+        exit 1
     fi
   else
     log "ERROR: The folder $WEBTRACKING_HOME does not exist"

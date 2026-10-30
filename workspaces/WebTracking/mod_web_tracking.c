@@ -2,6 +2,8 @@
 
 /*
  * VERSION       DATE        DESCRIPTION
+ * 2026.10.30.1 2026-10-30   Fix some dangling pointers
+ *                           Hide statically linked libraries from outside the module
  * 2026.9.22.1  2026-09-22   Add directive WebTrackingExcludeMethod
  *                           Add directive WebTrackingExcludeStatusCode
  * 2026.6.26.1  2026-06-26   Extract EOS operations outside output filter function 
@@ -213,7 +215,7 @@ APLOG_USE_MODULE(web_tracking);
 #endif
 
 // version
-const char *version = "Web Tracking Apache Module 2026.9.22.1 (C17/C++23)";
+const char *version = "Web Tracking Apache Module 2026.10.30.1 (C17/C++23)";
 
 wt_counter_t *wt_counter = 0;
 static apr_shm_t *shm_counter = 0;
@@ -457,6 +459,7 @@ static const char *wt_tracking_url_pattern(cmd_parms *cmd, void *dummy, const ch
       strcat(buffer, "\" (Reason: ");
       ap_regerror(ret, regex, buffer + strlen(buffer), 512 - strlen(buffer));
       ap_regfree(regex);
+      regex = 0;
       strcat(buffer, ")");
       return strdup(buffer);
    }
@@ -480,6 +483,7 @@ static const char *wt_tracking_uri(cmd_parms *cmd, void *dummy, const char *uri_
       strcat(buffer, "\" (Reason: ");
       ap_regerror(ret, regex, buffer + strlen(buffer), 512 - strlen(buffer));
       ap_regfree(regex);
+      regex = 0;
       strcat(buffer, ")");
       return strdup(buffer);
    }
@@ -568,6 +572,7 @@ static const char *wt_tracking_exclude_uri(cmd_parms *cmd, void *dummy, const ch
       strcat(buffer, "\" (Reason: ");
       ap_regerror(ret, regex, buffer + strlen(buffer), 512 - strlen(buffer));
       ap_regfree(regex);
+      regex = 0;
       strcat(buffer, ")");
       return strdup(buffer);
    }
@@ -591,6 +596,7 @@ static const char *wt_tracking_exclude_uri_body(cmd_parms *cmd, void *dummy, con
       strcat(buffer, "\" (Reason: ");
       ap_regerror(ret, regex, buffer + strlen(buffer), 512 - strlen(buffer));
       ap_regfree(regex);
+      regex = 0;
       strcat(buffer, ")");
       return strdup(buffer);
    }
@@ -614,6 +620,7 @@ static const char *wt_tracking_exclude_uri_request_body(cmd_parms *cmd, void *du
       strcat(buffer, "\" (Reason: ");
       ap_regerror(ret, regex, buffer + strlen(buffer), 512 - strlen(buffer));
       ap_regfree(regex);
+      regex = 0;
       strcat(buffer, ")");
       return strdup(buffer);
    }
@@ -637,6 +644,7 @@ static const char *wt_tracking_exclude_uri_response_body(cmd_parms *cmd, void *d
       strcat(buffer, "\" (Reason: ");
       ap_regerror(ret, regex, buffer + strlen(buffer), 512 - strlen(buffer));
       ap_regfree(regex);
+      regex = 0;
       strcat(buffer, ")");
       return strdup(buffer);
    }
@@ -660,6 +668,7 @@ static const char *wt_tracking_trace_uri(cmd_parms *cmd, void *dummy, const char
       strcat(buffer, "\" (Reason: ");
       ap_regerror(ret, regex, buffer + strlen(buffer), 512 - strlen(buffer));
       ap_regfree(regex);
+      regex = 0;
       strcat(buffer, ")");
       return strdup(buffer);
    }
@@ -683,6 +692,7 @@ static const char *wt_tracking_exclude_ip(cmd_parms *cmd, void *dummy, const cha
       strcat(buffer, "\" (Reason: ");
       ap_regerror(ret, regex, buffer + strlen(buffer), 512 - strlen(buffer));
       ap_regfree(regex);
+      regex = 0;
       strcat(buffer, ")");
       return strdup(buffer);
    }
@@ -706,6 +716,7 @@ static const char *wt_tracking_exclude_response_header(cmd_parms *cmd, void *dum
       strcat(buffer, "\" (Reason: ");
       ap_regerror(ret, regex, buffer + strlen(buffer), 512 - strlen(buffer));
       ap_regfree(regex);
+      regex = 0;
       strcat(buffer, ")");
       return strdup(buffer);
    }
@@ -784,6 +795,7 @@ static const char *wt_tracking_host(cmd_parms *cmd, void *dummy, const char *hos
       strcat(buffer, "\" (Reason: ");
       ap_regerror(ret, regex, buffer + strlen(buffer), 512 - strlen(buffer));
       ap_regfree(regex);
+      regex = 0;
       strcat(buffer, ")");
       return strdup(buffer);
    }
@@ -807,6 +819,7 @@ static const char *wt_tracking_content_type(cmd_parms *cmd, void *dummy, const c
       strcat(buffer, "\" (Reason: ");
       ap_regerror(ret, regex, buffer + strlen(buffer), 512 - strlen(buffer));
       ap_regfree(regex);
+      regex = 0;
       strcat(buffer, ")");
       return strdup(buffer);
    }
@@ -1612,7 +1625,9 @@ static short istrstr(const char *s1, const char *s2)
    short ret = strstr(l1, l2) != NULL;
 
    free(l1);
+   l1 = NULL;
    free(l2);
+   l2 = NULL;
 
    return ret;
 }

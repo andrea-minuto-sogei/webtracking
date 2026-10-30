@@ -13,7 +13,7 @@
 # 3 - Splunk restart failed
 
 # Version
-VERSION=2026.6.18.1
+VERSION=2026.9.28.1
 
 #!/usr/bin/env bash
 set -euo pipefail
@@ -27,17 +27,17 @@ WEBTRACKING_LOGS="$WEBTRACKING_HOME/logs"
 # Path to the splunkd binary (used to identify the process)
 SPLUNKD_PATH="splunkd"
 
-
+# ---------------------------------------------------------------------------
+# log  — writes a timestamped line to stdout.
+# Usage: log "message"
+# Format: [yyyy-MM-dd HH:mm:ss:SSS TZ]: message
+# ---------------------------------------------------------------------------
 log()
 {
-   # Extract hour in 00-23
-   local h=$(date +%H)
-
-   # Milliseconds from nanoseconds
-   local ms=$(date +%N | cut -c1-3)
-
-   # Output matching the format: yyyy-MM-dd HH:mm:ss:SSS z
-   printf '[%s]: %s\n' "$(date +%Y-%m-%d) $h:$(date +%M):$(date +%S):$ms $(date +%Z)" "$*"
+   # Single date call to avoid inconsistent timestamps across sub-invocations
+   local now
+   now=$(date +"%Y-%m-%d %H:%M:%S:%3N %Z")
+   printf '[%s]: %s\n' "${now}" "$*"
 }
 
 # Check if the splunkd process is active (search by full path)
