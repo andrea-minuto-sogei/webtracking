@@ -12,19 +12,19 @@
         "-L/home/webihs/IHS/lib",
         "-shared",
         "-static-libstdc++",
-        "-Wl,--exclude-libs,libstdc++.a",
+        "-Wl,--exclude-libs,libstdc++.a:libz.a",
         "-o",
         "/home/webihs/webtracking/lib/mod_web_tracking.so",
         "-I/home/webihs/IHS/include",
-        "-I${fileDirname}/zlib",
+        "-I/usr/include",
         "-O3",
         "-Wall",
         "-fmessage-length=0",
         "-fPIC",
         "${fileDirname}/*.cpp",
         "${fileDirname}/*.c",
-        "${fileDirname}/zlib/*.c",
-        "/opt/rh/gcc-toolset-15/root/usr/lib/gcc/x86_64-redhat-linux/15/libstdc++.a"
+        "/opt/rh/gcc-toolset-15/root/usr/lib/gcc/x86_64-redhat-linux/15/libstdc++.a",
+        "/usr/lib64/libz.a"
       ],
       "options": {
         "cwd": "${fileDirname}"

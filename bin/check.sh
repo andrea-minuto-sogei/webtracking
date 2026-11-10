@@ -2,7 +2,7 @@
 
 # This script is intended to be run periodically (e.g. via cron) to check the health of the Splunk forwarder on the webtracking server. 
 #  It performs the following checks:
-#     1. Verifies that the splunkd process is running by checking for the presence of the splunkd binary in the process list.
+#     1. Verifies that the splunkd process is running with current user privileges by checking for the presence of the splunkd binary in the process list.
 #     2. Checks the free space on the filesystem where /webtracking is mounted, ensuring that it has more than 20% free space.
 #     If any of the checks fail, it attempts to restart the Splunk forwarder service.
 
@@ -13,7 +13,7 @@
 # 3 - Splunk restart failed
 
 # Version
-VERSION=2026.9.28.1
+VERSION=2026.11.9.1
 
 #!/usr/bin/env bash
 set -euo pipefail
@@ -43,13 +43,14 @@ log()
 # Check if the splunkd process is active (search by full path)
 is_splunkd_running() 
 {
+   user="$1"
    if command -v pgrep >/dev/null 2>&1
    then
-      pgrep -f -- "$SPLUNKD_PATH" >/dev/null 2>&1
+      pgrep -u "$user" -f -- "$SPLUNKD_PATH" >/dev/null 2>&1
       return $?
    else
       # fallback to ps if pgrep not available
-      ps aux | grep -- "$SPLUNKD_PATH" | grep -v grep >/dev/null 2>&1
+      ps aux | grep -u "$user" -- "$SPLUNKD_PATH" | grep -v grep >/dev/null 2>&1
       return $?
    fi
 }
@@ -183,7 +184,7 @@ then
    fi
 fi
 
-if is_splunkd_running
+if is_splunkd_running $SPLUNK_USER
 then
    log "splunkd process appears to be running"
    process_ok=true

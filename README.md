@@ -16,7 +16,7 @@ The **Web Tracking Apache Module** (`mod_web_tracking`) is a high-performance pl
 | **Compiler** | GCC 15.1.1 20250521 (Red Hat 15.1.1-2) |
 | **Module Binary** | `mod_web_tracking.so` |
 | **Distribution Package** | `webtracking-bin.zip` |
-| **Documented Version** | `2026.10.30.1` |
+| **Documented Version** | `2026.11.10.1` |
 | **Storage Destination** | Staged in `WebTrackingRecordFolder`, archived to `WebTrackingRecordArchiveFolder` |
 
 ---
@@ -29,7 +29,7 @@ The primary function of the module is to track input (requests) and output (resp
 2. **Debugging**: Diagnostic tracing for anomalous web transactions or unpredictable application behavior.
 
 > ⚠️ **Protocol Restriction**: Only **HTTP/1.1** is tracked. Requests using HTTP/2, HTTP/3, or HTTP/1.0 are skipped.  
-> 📦 **Compression**: Built-in proprietary extension of **zlib v1.2.11** (compiled statically within the module for portability and security). Supports **gzip** and **deflate**.  
+> 📦 **Compression**: Built-in **zlib v1.2.11** library (compiled statically within the module for portability). Supports **gzip** and **deflate**.  
 > 🛡️ **Security Management**: The module logs and filters traffic; it does not perform threat detection or WAF mitigation.
 
 ---
@@ -160,7 +160,7 @@ When `WebTrackingDisable` is set to `On`:
 ## 🏷️ Version Inspection
 
 ### Documented Version
-**Web Tracking Apache Module `2026.10.30.1` (C17/C++23)**
+**Web Tracking Apache Module `2026.11.10.1` (C17/C++23)**
 
 To inspect the binary version on Linux:
 

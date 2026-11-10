@@ -4,8 +4,8 @@
       "name": "Linux",
       "includePath": [
         "${workspaceFolder}/**",
-        "${workspaceFolder}/zlib",
-        "/home/webihs/IHS/include"
+        "/home/webihs/IHS/include",
+        "/usr/include"
       ],
       "defines": [],
       "compilerPath": "/opt/rh/gcc-toolset-15/root/bin/gcc",

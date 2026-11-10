@@ -506,7 +506,7 @@ std::string base64encode(const std::string &input) noexcept
 #include <sys/syscall.h>
 
 /* Compression Library Header Files */
-#include <zutil.h>
+#include <zlib.h>
 
 // C++ implementation functions header file
 #include "wt_impl.hpp"
@@ -614,7 +614,7 @@ std::string wt_inflate(const std::string &in, int wrap)
    strm.next_out = Z_NULL;
 
    // Initialize input data
-   inflateInit_ihs(&strm, wrap);
+   inflateInit2(&strm, wrap);
    strm.avail_in = in.length();
    strm.next_in = (unsigned char *) const_cast<char *>(in.c_str());
 
@@ -624,7 +624,7 @@ std::string wt_inflate(const std::string &in, int wrap)
       strm.avail_out = sizeof(out);
       strm.next_out = out;
 
-      int rc = inflate_ihs(&strm, Z_NO_FLUSH);
+      int rc = inflate(&strm, Z_NO_FLUSH);
       if (rc != Z_OK && rc != Z_STREAM_END) return {};
 
       size_t bytes = sizeof(out) - strm.avail_out;
@@ -634,7 +634,7 @@ std::string wt_inflate(const std::string &in, int wrap)
    } while (strm.avail_out == 0);
 
    // End inflate engine
-   inflateEnd_ihs(&strm);
+   inflateEnd(&strm);
 
    // Exit
    return plain;
@@ -2632,7 +2632,7 @@ void wt_output_filter_response_body(ap_filter_t *f, wt_output_filter_cpp *ctx, a
                   if (APLOG_R_IS_LEVEL(f->r, request_log_level))
                      ap_log_rerror(APLOG_MARK, request_log_level, 0, f->r, "wt_output_filter_response_body(): [%ld] inflate the payload", thread_id);
                   
-                  std::string inflated = wt_inflate(ctx->body, !std::strcmp(ce, "gzip") ? 2 : 1);
+                  std::string inflated = wt_inflate(ctx->body, !std::strcmp(ce, "gzip") ? 47 : 31);
                   
                   if (!inflated.empty())
                   {

@@ -2,6 +2,8 @@
 
 /*
  * VERSION       DATE        DESCRIPTION
+ * 2026.11.10.1 2026-11-10   Drop custom zlib implementation based on version 1.2.11
+ *                           Add built-in zlib library: current version is 1.2.11
  * 2026.10.30.1 2026-10-30   Fix some dangling pointers
  *                           Hide statically linked libraries from outside the module
  * 2026.9.22.1  2026-09-22   Add directive WebTrackingExcludeMethod
@@ -215,7 +217,7 @@ APLOG_USE_MODULE(web_tracking);
 #endif
 
 // version
-const char *version = "Web Tracking Apache Module 2026.10.30.1 (C17/C++23)";
+const char *version = "Web Tracking Apache Module 2026.11.10.1 (C17/C++23)";
 
 wt_counter_t *wt_counter = 0;
 static apr_shm_t *shm_counter = 0;
