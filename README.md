@@ -13,10 +13,10 @@ The **Web Tracking Apache Module** (`mod_web_tracking`) is a high-performance pl
 | **Certified OS** | Red Hat Enterprise Linux (RHEL) 8.x and 9.x |
 | **Tracked Protocol** | **HTTP/1.1 only** *(requests using other protocol versions are ignored)* |
 | **Source Language** | C17 / C++23 specifications |
-| **Compiler** | GCC 15.1.1 20250521 (Red Hat 15.1.1-2) |
+| **Compiler** | GCC 15.2.1 20260123 (Red Hat 15.2.1-7) |
 | **Module Binary** | `mod_web_tracking.so` |
 | **Distribution Package** | `webtracking-bin.zip` |
-| **Documented Version** | `2026.11.10.1` |
+| **Documented Version** | `2026.11.12.1` |
 | **Storage Destination** | Staged in `WebTrackingRecordFolder`, archived to `WebTrackingRecordArchiveFolder` |
 
 ---
@@ -29,7 +29,7 @@ The primary function of the module is to track input (requests) and output (resp
 2. **Debugging**: Diagnostic tracing for anomalous web transactions or unpredictable application behavior.
 
 > ⚠️ **Protocol Restriction**: Only **HTTP/1.1** is tracked. Requests using HTTP/2, HTTP/3, or HTTP/1.0 are skipped.  
-> 📦 **Compression**: Built-in **zlib v1.2.11** library (compiled statically within the module for portability). Supports **gzip** and **deflate**.  
+> 📦 **Compression**: **zlib-ng v2.3.3** library (compiled statically within the module for portability). Supports **gzip** and **deflate**.  
 > 🛡️ **Security Management**: The module logs and filters traffic; it does not perform threat detection or WAF mitigation.
 
 ---
@@ -160,12 +160,12 @@ When `WebTrackingDisable` is set to `On`:
 ## 🏷️ Version Inspection
 
 ### Documented Version
-**Web Tracking Apache Module `2026.11.10.1` (C17/C++23)**
+**Web Tracking Apache Module `2026.11.12.1` (C17/C++23)**
 
 To inspect the binary version on Linux:
 
 ```bash
-strings /prod/webtracking/lib/mod_web_tracking.so | grep -E -o 'Web Tracking Apache Module .*?\)'
+strings /webtracking/lib/mod_web_tracking.so | grep -E -o 'Web Tracking Apache Module .*?\)'
 ```
 
 The version is also printed to the Apache `ErrorLog` on server startup and displayed on the Apache `server-status` page.
@@ -346,14 +346,14 @@ Include the dedicated tracking configuration file:
 
 ```apache
 # Load Web Tracking Configuration
-Include "conf/webtracking.conf"
+Include "conf.d/webtracking.conf"
 ```
 
-### 2. Sample `conf/webtracking.conf`
+### 2. Sample `conf.d/webtracking.conf`
 
 ```apache
 # Load module
-LoadModule web_tracking_module /prod/webtracking/lib/mod_web_tracking.so
+LoadModule web_tracking_module /webtracking/lib/mod_web_tracking.so
 
 # Log level (global scope)
 LogLevel web_tracking:info
@@ -423,19 +423,19 @@ WebTrackingRecordLifeTime 15
 
 ```bash
 # 1. Stop web server
-/prod/IBM/HTTPServer/bin/apachectl stop
+/IBM/HTTPServer/bin/apachectl stop
 
 # 2. Flush remaining active logs to archive
 mv -v /webtracking/logs/webtracking*.log /webtracking/splunk/
 
 # 3. Clean old library files
-rm -fv /prod/webtracking/lib/*
+rm -fv /webtracking/lib/*
 
 # 4. Extract new release package
-unzip -uo ~/webtracking-bin.zip -d /prod/
+unzip -uo /webtracking/update/webtracking-bin.zip -d /
 
 # 5. Start web server
-/prod/IBM/HTTPServer/bin/apachectl start
+/IBM/HTTPServer/bin/apachectl start
 ```
 
 ---

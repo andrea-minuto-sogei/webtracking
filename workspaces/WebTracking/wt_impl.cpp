@@ -505,9 +505,6 @@ std::string base64encode(const std::string &input) noexcept
 #include <locale.h>
 #include <sys/syscall.h>
 
-/* Compression Library Header Files */
-#include <zlib.h>
-
 // C++ implementation functions header file
 #include "wt_impl.hpp"
 #include "wt_record.hpp"
@@ -597,6 +594,9 @@ struct wt_output_filter_cpp
    bool logical_eos; /* True if the final buckect is empty */
 };
 
+/* Compression Library Header */
+#include <zlib-ng.h>
+
 std::string wt_inflate(const std::string &in, int wrap)
 {
    // Initialize function variables
@@ -604,7 +604,7 @@ std::string wt_inflate(const std::string &in, int wrap)
    std::string plain{};   
 
    // Initialize inflate engine
-   z_stream strm;
+   zng_stream strm;
    strm.zalloc = Z_NULL;
    strm.zfree = Z_NULL;
    strm.opaque = Z_NULL;
@@ -614,7 +614,7 @@ std::string wt_inflate(const std::string &in, int wrap)
    strm.next_out = Z_NULL;
 
    // Initialize input data
-   inflateInit2(&strm, wrap);
+   zng_inflateInit2(&strm, wrap);
    strm.avail_in = in.length();
    strm.next_in = (unsigned char *) const_cast<char *>(in.c_str());
 
@@ -624,7 +624,7 @@ std::string wt_inflate(const std::string &in, int wrap)
       strm.avail_out = sizeof(out);
       strm.next_out = out;
 
-      int rc = inflate(&strm, Z_NO_FLUSH);
+      int rc = zng_inflate(&strm, Z_NO_FLUSH);
       if (rc != Z_OK && rc != Z_STREAM_END) return {};
 
       size_t bytes = sizeof(out) - strm.avail_out;
@@ -634,7 +634,7 @@ std::string wt_inflate(const std::string &in, int wrap)
    } while (strm.avail_out == 0);
 
    // End inflate engine
-   inflateEnd(&strm);
+   zng_inflateEnd(&strm);
 
    // Exit
    return plain;

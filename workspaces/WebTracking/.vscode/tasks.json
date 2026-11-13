@@ -9,14 +9,14 @@
         "-std=c++23",
         "-std=c17",
         "-D_LARGEFILE64_SOURCE=1",
-        "-L/home/webihs/IHS/lib",
+        "-L${HOME}/IHS/lib",
         "-shared",
         "-static-libstdc++",
-        "-Wl,--exclude-libs,libstdc++.a:libz.a",
+        "-Wl,--exclude-libs,libstdc++.a:libz-ng.a",
         "-o",
-        "/home/webihs/webtracking/lib/mod_web_tracking.so",
-        "-I/home/webihs/IHS/include",
-        "-I/usr/include",
+        "${HOME}/webtracking/lib/mod_web_tracking.so",
+        "-I${HOME}/IHS/include",
+        "-I${fileDirname}/zlib-ng/include",
         "-O3",
         "-Wall",
         "-fmessage-length=0",
@@ -24,7 +24,7 @@
         "${fileDirname}/*.cpp",
         "${fileDirname}/*.c",
         "/opt/rh/gcc-toolset-15/root/usr/lib/gcc/x86_64-redhat-linux/15/libstdc++.a",
-        "/usr/lib64/libz.a"
+        "${fileDirname}/zlib-ng/lib/libz-ng.a"
       ],
       "options": {
         "cwd": "${fileDirname}"

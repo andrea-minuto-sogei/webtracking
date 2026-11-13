@@ -3,8 +3,14 @@
 # Enable gcc toolset 15
 scl enable gcc-toolset-15 bash
 
-# Build
-/opt/rh/gcc-toolset-15/root/bin/gcc -std=c++23 -std=c17 -D_LARGEFILE64_SOURCE=1 -L/home/webihs/IHS/lib -shared -static-libstdc++ -Wl,--exclude-libs,libstdc++.a:libz.a -o /home/webihs/webtracking/lib/mod_web_tracking.so -I/home/webihs/IHS/include -I/usr/include -O3 -Wall -fmessage-length=0 -fPIC /home/webihs/workspaces/WebTracking/*.cpp /home/webihs/workspaces/WebTracking/*.c /opt/rh/gcc-toolset-15/root/usr/lib/gcc/x86_64-redhat-linux/15/libstdc++.a /usr/lib64/libz.a
+# Build zlib-ng
+CFLAGS="-fPIC" ./configure --prefix=${HOME}/workspaces/WebTracking/zlib-ng --static --64 --without-gzfileops --without-optimizations
+make
+make install
+rm -rf ../workspaces/WebTracking/zlib-ng/{share/,lib/pkgconfig}
+
+# Build web_tracking module
+/opt/rh/gcc-toolset-15/root/bin/gcc -std=c++23 -std=c17 -D_LARGEFILE64_SOURCE=1 -L${HOME}/IHS/lib -shared -static-libstdc++ -Wl,--exclude-libs,libstdc++.a:libz-ng.a -o ${HOME}/webtracking/lib/mod_web_tracking.so -I${HOME}/IHS/include -I${HOME}/workspaces/WebTracking/zlib-ng/include -O3 -Wall -fmessage-length=0 -fPIC ${HOME}/workspaces/WebTracking/*.cpp ${HOME}/workspaces/WebTracking/*.c /opt/rh/gcc-toolset-15/root/usr/lib/gcc/x86_64-redhat-linux/15/libstdc++.a ${HOME}/workspaces/WebTracking/zlib-ng/lib/libz-ng.a
 
 ## Archivi
 

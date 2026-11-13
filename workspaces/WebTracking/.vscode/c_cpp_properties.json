@@ -4,8 +4,7 @@
       "name": "Linux",
       "includePath": [
         "${workspaceFolder}/**",
-        "/home/webihs/IHS/include",
-        "/usr/include"
+        "${HOME}/IHS/include"
       ],
       "defines": [],
       "compilerPath": "/opt/rh/gcc-toolset-15/root/bin/gcc",

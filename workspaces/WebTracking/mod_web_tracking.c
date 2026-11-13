@@ -2,6 +2,9 @@
 
 /*
  * VERSION       DATE        DESCRIPTION
+ * 2026.11.12.1 2026-11-12   Move to GNU Compiler Collection 15.2.1
+ *                           Move to compression library zlib-ng 2.3.3
+ *                           Drop compression library 1.2.11
  * 2026.11.10.1 2026-11-10   Drop custom zlib implementation based on version 1.2.11
  *                           Add built-in zlib library: current version is 1.2.11
  * 2026.10.30.1 2026-10-30   Fix some dangling pointers
@@ -198,6 +201,9 @@
 /* C Header Files */
 #include <stdbool.h>
 
+/* Compression Library Header */
+#include <zlib-ng.h>
+
 /* C++ header files */
 #include "wt_impl.hpp"
 
@@ -217,7 +223,7 @@ APLOG_USE_MODULE(web_tracking);
 #endif
 
 // version
-const char *version = "Web Tracking Apache Module 2026.11.10.1 (C17/C++23)";
+const char *version = "Web Tracking Apache Module 2026.11.12.1 (C17/C++23)";
 
 wt_counter_t *wt_counter = 0;
 static apr_shm_t *shm_counter = 0;
@@ -1084,7 +1090,10 @@ static int post_config(apr_pool_t *pconf, apr_pool_t *plog, apr_pool_t *ptemp, s
    }
 
    if (is_main_process && APLOG_IS_LEVEL(s, APLOG_INFO))
+   {
       ap_log_error(APLOG_MARK, APLOG_INFO, 0, s, version);
+      ap_log_error(APLOG_MARK, APLOG_INFO, 0, s, "Compression Library zlib-ng %s", zlibng_version());
+   }
 
    wt_config_t *conf = ap_get_module_config(s->module_config, &web_tracking_module);
 
