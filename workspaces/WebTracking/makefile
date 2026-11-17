@@ -38,17 +38,20 @@ LDFLAGS  := \
     -static-libstdc++ \
     -Wl,--exclude-libs,libstdc++.a:libz-ng.a
 
-# Derived object lists (placed in SRCDIR to keep the tree clean)
-COBJS   := $(CSRCS:.c=.o)
-CXXOBJS := $(CXXSRCS:.cpp=.o)
-OBJS    := $(COBJS) $(CXXOBJS)
+# Object files go into a dedicated build subdirectory
+BUILDDIR := $(SRCDIR)build
+COBJS    := $(patsubst $(SRCDIR)%.c,  $(BUILDDIR)/%.o, $(CSRCS))
+CXXOBJS  := $(patsubst $(SRCDIR)%.cpp,$(BUILDDIR)/%.o, $(CXXSRCS))
+OBJS     := $(COBJS) $(CXXOBJS)
 
 # ============================================================
 
 # Archive paths
-BINZIP  := $(HOME)/archives/webtracking-bin.zip
-SRCZIP  := $(HOME)/archives/webtracking-src.zip
-VERFILE := $(HOME)/webtracking/bin/version.txt
+BINZIP   := $(HOME)/archives/webtracking-bin.zip
+SRCZIP   := $(HOME)/archives/webtracking-src.zip
+VERFILE  := $(HOME)/webtracking/bin/version.txt
+CHECKSH  := $(HOME)/webtracking/bin/check.sh
+MODC     := $(SRCDIR)mod_web_tracking.c
 
 # .PHONY declares targets that are NOT real files — just named recipes.
 # Without it, if a file with the same name as a target existed on disk,
@@ -67,38 +70,49 @@ all: $(TARGET)
 
 $(TARGET): $(OBJS) $(LIBSTDCXX) $(LIBZNG)
 	@mkdir -p $(dir $@)
-	$(CC) $(LDFLAGS) -o $@ $^   # $^ = all .o + .a files
+	@echo "Build $(TARGET)"
+	@$(CC) $(LDFLAGS) -o $@ $^
 
-# Compile C sources
-$(SRCDIR)%.o: $(SRCDIR)%.c
-	$(CC) $(CFLAGS) -c -o $@ $<   # $< = the matched .c file
+# Compile C sources  (output goes to build/)
+$(BUILDDIR)/%.o: $(SRCDIR)%.c
+	@mkdir -p $(BUILDDIR)
+	@echo "Compile $<"
+	@$(CC) $(CFLAGS) -c -o $@ $<
 
-# Compile C++ sources
-$(SRCDIR)%.o: $(SRCDIR)%.cpp
-	$(CC) $(CXXFLAGS) -c -o $@ $<   # $< = the matched .cpp file
+# Compile C++ sources  (output goes to build/)
+$(BUILDDIR)/%.o: $(SRCDIR)%.cpp
+	@mkdir -p $(BUILDDIR)
+	@echo "Compile $<"
+	@$(CC) $(CXXFLAGS) -c -o $@ $<
 
 clean:
-	rm -f $(OBJS) $(TARGET)
+	rm -rvf $(BUILDDIR) $(TARGET)
 
-# archives — build version.txt then package binary and source zips
+# $(VERFILE) is rebuilt only when mod_web_tracking.c or check.sh is newer.
+$(VERFILE): $(MODC) $(CHECKSH)
+	@mkdir -p $(dir $@)
+	@echo "Update $(VERFILE)"
+	@grep -E -o 'Web Tracking Apache Module .*?\)' $(MODC) > $@
+	@echo 'Universal Splunk Forwarder Check' \
+	    $$(grep -oP 'VERSION=\K.+' $(CHECKSH)) \
+	    '(BASH)' \
+	    >> $@
+
+# archives — ensure version.txt is current, then package binary and source zips.
 #   The two zip commands run from $HOME so that paths inside the archive
 #   are relative (e.g. webtracking/lib/... and workspaces/WebTracking/...)
-archives: $(TARGET)
+archives: $(TARGET) $(VERFILE)
 	@mkdir -p $(HOME)/archives
-	grep -E -o 'Web Tracking Apache Module .*?\)' \
-	    $(HOME)/workspaces/WebTracking/mod_web_tracking.c \
-	    > $(VERFILE)
-	echo 'Universal Splunk Forwarder Check' \
-	    $$(grep -oP 'VERSION=\K.+' $(HOME)/webtracking/bin/check.sh) \
-	    '(BASH)' \
-	    >> $(VERFILE)
-	cd $(HOME) && zip -r -FS -dc $(BINZIP) \
+	@echo "Build $(BINZIP)"
+	@cd $(HOME) && zip -r -FS -dc $(BINZIP) \
 	    webtracking/bin \
 	    webtracking/lib \
 	    webtracking/logs_archive \
 	    webtracking/update \
 	    webtracking/logs
-	cd $(HOME) && zip -r -FS -dc $(SRCZIP) \
+	@echo "Build $(SRCZIP)"
+	@cd $(HOME) && zip -r -FS -dc $(SRCZIP) \
 	    workspaces/WebTracking/ \
 	    workspaces/Collector/ \
-	    info
+	    info \
+	    -x 'workspaces/WebTracking/build/*'
