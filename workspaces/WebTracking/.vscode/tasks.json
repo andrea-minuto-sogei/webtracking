@@ -4,27 +4,9 @@
     {
       "type": "shell",
       "label": "Web Tracking Apache Module Build",
-      "command": "/opt/rh/gcc-toolset-15/root/bin/gcc",
+      "command": "make",
       "args": [
-        "-std=c++23",
-        "-std=c17",
-        "-D_LARGEFILE64_SOURCE=1",
-        "-L${HOME}/IHS/lib",
-        "-shared",
-        "-static-libstdc++",
-        "-Wl,--exclude-libs,libstdc++.a:libz-ng.a",
-        "-o",
-        "${HOME}/webtracking/lib/mod_web_tracking.so",
-        "-I${HOME}/IHS/include",
-        "-I${fileDirname}/zlib-ng/include",
-        "-O3",
-        "-Wall",
-        "-fmessage-length=0",
-        "-fPIC",
-        "${fileDirname}/*.cpp",
-        "${fileDirname}/*.c",
-        "/opt/rh/gcc-toolset-15/root/usr/lib/gcc/x86_64-redhat-linux/15/libstdc++.a",
-        "${fileDirname}/zlib-ng/lib/libz-ng.a"
+        "all"
       ],
       "options": {
         "cwd": "${fileDirname}"
@@ -38,15 +20,11 @@
       }
     },
     {
-      "type": "cppbuild",
-      "label": "C/C++: gcc build active file",
-      "command": "/opt/rh/gcc-toolset-15/root/bin/gcc",
+      "type": "shell",
+      "label": "Web Tracking Apache Module Archives",
+      "command": "make",
       "args": [
-        "-fdiagnostics-color=always",
-        "-g",
-        "${file}",
-        "-o",
-        "${fileDirname}/${fileBasenameNoExtension}"
+        "archives"
       ],
       "options": {
         "cwd": "${fileDirname}"
@@ -54,48 +32,7 @@
       "problemMatcher": [
         "$gcc"
       ],
-      "group": "build",
-      "detail": "compiler: /opt/rh/gcc-toolset-15/root/bin/gcc"
-    },
-    {
-      "type": "cppbuild",
-      "label": "C/C++: gcc build active file",
-      "command": "/opt/rh/gcc-toolset-15/root/bin/gcc",
-      "args": [
-        "-fdiagnostics-color=always",
-        "-g",
-        "${file}",
-        "-o",
-        "${fileDirname}/${fileBasenameNoExtension}"
-      ],
-      "options": {
-        "cwd": "${fileDirname}"
-      },
-      "problemMatcher": [
-        "$gcc"
-      ],
-      "group": "build",
-      "detail": "compiler: /opt/rh/gcc-toolset-15/root/bin/gcc"
-    },
-    {
-      "type": "cppbuild",
-      "label": "C/C++: gcc build active file",
-      "command": "/opt/rh/gcc-toolset-15/root/bin/gcc",
-      "args": [
-        "-fdiagnostics-color=always",
-        "-g",
-        "${file}",
-        "-o",
-        "${fileDirname}/${fileBasenameNoExtension}"
-      ],
-      "options": {
-        "cwd": "${fileDirname}"
-      },
-      "problemMatcher": [
-        "$gcc"
-      ],
-      "group": "build",
-      "detail": "compiler: /opt/rh/gcc-toolset-15/root/bin/gcc"
+      "group": "build"
     }
   ]
 }

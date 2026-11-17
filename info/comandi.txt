@@ -10,14 +10,18 @@ make install
 rm -rf ../workspaces/WebTracking/zlib-ng/{share/,lib/pkgconfig}
 
 # Build web_tracking module
+make -f ${HOME}/workspaces/WebTracking/makefile
 /opt/rh/gcc-toolset-15/root/bin/gcc -std=c++23 -std=c17 -D_LARGEFILE64_SOURCE=1 -L${HOME}/IHS/lib -shared -static-libstdc++ -Wl,--exclude-libs,libstdc++.a:libz-ng.a -o ${HOME}/webtracking/lib/mod_web_tracking.so -I${HOME}/IHS/include -I${HOME}/workspaces/WebTracking/zlib-ng/include -O3 -Wall -fmessage-length=0 -fPIC ${HOME}/workspaces/WebTracking/*.cpp ${HOME}/workspaces/WebTracking/*.c /opt/rh/gcc-toolset-15/root/usr/lib/gcc/x86_64-redhat-linux/15/libstdc++.a ${HOME}/workspaces/WebTracking/zlib-ng/lib/libz-ng.a
 
-## Archivi
+## Archives
 
-# Creazione archivio binari
-grep -E -o 'Web Tracking Apache Module .*?\)' /home/webihs/workspaces/WebTracking/mod_web_tracking.c > /home/webihs/webtracking/bin/version.txt
-echo 'Universal Splunk Forwarder Check' $(grep -oP 'VERSION=\K.+' /home/webihs/webtracking/bin/check.sh) '(BASH)' >> /home/webihs/webtracking/bin/version.txt
-cd && zip -r -FS -dc /prod/tracciamento/archives/webtracking-bin.zip webtracking/bin webtracking/lib webtracking/splunk webtracking/update webtracking/logs && cd -
+# Build with make
+make -f ${HOME}/workspaces/WebTracking/makefile archives
 
-# Creazione archivio sorgenti
-cd /prod/tracciamento && zip -r -FS -dc archives/webtracking-src.zip workspaces/WebTracking/ workspaces/Collector/ info && cd -
+# Build only webtracking-bin.zip
+grep -E -o 'Web Tracking Apache Module .*?\)' ${HOME}/workspaces/WebTracking/mod_web_tracking.c > ${HOME}/webtracking/bin/version.txt
+echo 'Universal Splunk Forwarder Check' $(grep -oP 'VERSION=\K.+' ${HOME}/webtracking/bin/check.sh) '(BASH)' >> ${HOME}/webtracking/bin/version.txt
+zip -r -FS -dc ${HOME}/archives/webtracking-bin.zip webtracking/bin webtracking/lib webtracking/logs_archive webtracking/update webtracking/logs
+
+# Build only webtracking-src.zip
+zip -r -FS -dc archives/webtracking-src.zip workspaces/WebTracking/ workspaces/Collector/ info
