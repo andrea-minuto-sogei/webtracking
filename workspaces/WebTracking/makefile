@@ -1,10 +1,14 @@
-# ============================================================
+# ========================================================================
 #  mod_web_tracking — Apache shared module
-#  Requires: gcc-toolset-15, IHS headers/libs, zlib-ng (bundled)
-# ============================================================
+#  Requires: gcc-toolset-$(TOOLSET), IHS headers/libs, zlib-ng (bundled)
+# ========================================================================
 
-CC      := /opt/rh/gcc-toolset-15/root/bin/gcc
-SRCDIR  := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
+# Main variables
+TOOLSET    := 15
+TOOLSETDIR := /opt/rh/gcc-toolset-$(TOOLSET)/root
+CC         := $(TOOLSETDIR)/bin/gcc
+CXX        := $(TOOLSETDIR)/bin/g++
+SRCDIR     := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
 
 # Output
 TARGET  := $(HOME)/webtracking/lib/mod_web_tracking.so
@@ -13,8 +17,7 @@ TARGET  := $(HOME)/webtracking/lib/mod_web_tracking.so
 CSRCS   := $(wildcard $(SRCDIR)*.c)
 CXXSRCS := $(wildcard $(SRCDIR)*.cpp)
 
-# Static libraries linked in
-LIBSTDCXX := /opt/rh/gcc-toolset-15/root/usr/lib/gcc/x86_64-redhat-linux/15/libstdc++.a
+# Static libraries linked in (libstdc++ is linked via -static-libstdc++)
 LIBZNG    := $(SRCDIR)zlib-ng/lib/libz-ng.a
 
 # Compiler flags (shared for both C and C++ translation units)
@@ -70,10 +73,10 @@ all: $(TARGET)
 #        (used in compile steps: the single .c/.cpp source file;
 #         avoids accidentally passing header files to the compiler)
 
-$(TARGET): $(OBJS) $(LIBSTDCXX) $(LIBZNG)
+$(TARGET): $(OBJS) $(LIBZNG)
 	@mkdir -p $(dir $@)
 	@echo "Build $(TARGET)"
-	@$(CC) $(LDFLAGS) -o $@ $^
+	@$(CXX) $(LDFLAGS) -o $@ $^
 
 # Compile C sources  (output goes to build/)
 $(BUILDDIR)/%.o: $(SRCDIR)%.c
@@ -85,7 +88,7 @@ $(BUILDDIR)/%.o: $(SRCDIR)%.c
 $(BUILDDIR)/%.o: $(SRCDIR)%.cpp
 	@mkdir -p $(BUILDDIR)
 	@echo "Compile $<"
-	@$(CC) $(CXXFLAGS) -c -o $@ $<
+	@$(CXX) $(CXXFLAGS) -c -o $@ $<
 
 clean:
 	rm -rvf $(BUILDDIR) $(TARGET)
@@ -98,7 +101,7 @@ clean:
 $(VERFILE): $(MODC) $(CHECKSH)
 	@mkdir -p $(dir $@)
 	@echo "Update $(VERFILE)"
-	@grep -E -o 'Web Tracking Apache Module .*?\)' $(MODC) > $@
+	@grep -m1 -E -o 'Web Tracking Apache Module [0-9][^"]*' $(MODC) > $@
 	@echo 'Universal Splunk Forwarder Check' \
 	    $$(grep -oP 'VERSION=\K.+' $(CHECKSH)) \
 	    '(BASH)' \
